@@ -7,6 +7,7 @@ numpy==1.23.1
 gym[mujoco_py,classic_control]==0.23.0
 --extra-index-url https://download.pytorch.org/whl/cu113
 torch==1.11.0+cu113
+--extra-index-url https://download.pytorch.org/whl/cu113/ "torch==1.11.0+cu113"
 pyrallis==0.3.1
 --find-links https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
 jax==0.4.1

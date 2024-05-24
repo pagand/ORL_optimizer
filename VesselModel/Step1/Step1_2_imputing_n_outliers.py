@@ -12,8 +12,7 @@ df.drop(["CARGO", "CARGO_PAX", "PAX", 'TRACK_MADE_GOOD',
 
 df["WIND_ANGLE"] = df["WIND_ANGLE"].apply(lambda x: x-360 if x>360 else x) 
 df = df[df.trip_id!=0]
-df[(df.SOG == 0) & (df.LONGITUDE.isna()) & (df.LATITUDE.isna())]
-df = df[~((df.SOG == 0) & (df.LONGITUDE.isna()) & (df.LATITUDE.isna()))]
+
 
 
 cols = list(df.columns)
@@ -115,7 +114,7 @@ IQR = q3 - q1
 lower = q1 - abs(1.5 * IQR)
 upper = q3 + abs(1.5 * IQR)
 tmp = df[(df[col]<lower) | (df[col]>upper)][["SPEED_1", "SPEED_2", "POWER_1", "POWER_2"]]
-#tmp # return 168322
+# tmp # return 168304
 df.loc[tmp.index, "SPEED_1"] = np.nan 
 
 
@@ -205,6 +204,7 @@ len(missing)
 for trip_id in missing.keys():
     for time in missing[trip_id]:
         df.loc[len(df)] = {"Time":time, "trip_id":trip_id}
+
 df = df.sort_values("Time").reset_index(drop=True)
 
 #df.columns
@@ -217,12 +217,14 @@ def impute_Dati(df):#
         previous_dt = pd.to_datetime(df.loc[i-1].Dati, format='%y%m%d_%H%M%S')
         dt = (previous_dt +  datetime.timedelta(minutes=1)).strftime('%y%m%d_%H%M%S')
         df.loc[i, "Dati"] = dt
+
 impute_Dati(df)
 
 def impute_mode(df, cols):
     for col in cols:
         mode = df[col].mode()
         df[col] = df[col].fillna(mode)
+        
 impute_mode(df, ["DEPTH"])
 
 def impute_mean_within_trips(df, cols):
@@ -233,6 +235,7 @@ def impute_mean_within_trips(df, cols):
             missing = list(tmp_df[tmp_df[col].isna()].index)
             mean = tmp_df[col].mean()
             df.loc[missing, col] = mean
+
 impute_mean_within_trips(df, ["HEADING", "WIND_SPEED", "WIND_SPEED_TRUE", "WIND_ANGLE", "WIND_ANGLE_TRUE"])
 
 df.isna().sum()[df.isna().sum()>0]
@@ -255,6 +258,7 @@ def impute_missing(df, cols):
                 impute_diff = (after_val- prev_val)/2
             for i in range(len(missing)):
                 df.loc[missing[i], col] = prev_val + impute_diff*(i+1)
+
 impute_missing(df, df.columns)
 
 df.isna().sum()[df.isna().sum()>0]

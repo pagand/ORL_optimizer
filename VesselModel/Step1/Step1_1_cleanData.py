@@ -32,6 +32,9 @@ df[pd.isna(df.LONGITUDE) & (df.THRUST_1==0) &(df.THRUST_2==0)].sum()[df[pd.isna(
 #df = df[~(pd.isna(df.LONGITUDE) & (df.THRUST_1==0) &(df.THRUST_2==0))]
 df = df[~(pd.isna(df.LONGITUDE) & (df.THRUST_1==0) &(df.THRUST_2==0))]
 df
+df[(df.SOG == 0) & (df.LONGITUDE.isna()) & (df.LATITUDE.isna())]
+df = df[~((df.SOG == 0) & (df.LONGITUDE.isna()) & (df.LATITUDE.isna()))]
+
 df.to_csv('~/BCFerryData/11.csv', index=False)
 df = pd.read_csv('~/BCFerryData/11.csv', skiprows=[1])
 # trip ID
@@ -91,11 +94,11 @@ def number_trip(bay_thresh = 1e-6, speed_thres=1):
 df.dropna(axis=0, thresh=35, inplace=True)
 df["trip_id"] = number_trip().astype(int)
 
-print(df.trip_id.min(), df.trip_id.max()) ## total 4093 trips
+print(df.trip_id.min(), df.trip_id.max()) ## total 4083 trips
 
 print(df.groupby(df.trip_id).count().head(20).Dati)
 #df[['Dati','Time','LONGITUDE','LATITUDE','SOG','THRUST_1','THRUST_2','trip_id']].head(160)
-df[['Dati','Time','LONGITUDE','LATITUDE','SOG','trip_id']].tail(100)
+#df[['Dati','Time','LONGITUDE','LATITUDE','SOG','trip_id']].tail(100)
 
 
 df.to_csv("~/BCFerryData/queenCsvOut_withID.csv", index=False)
@@ -105,7 +108,7 @@ df = pd.read_csv("~/BCFerryData/queenCsvOut_withID.csv")
 
 # These are trips with extremely off locations, drop these trips
 off_locations = list(df[df.LATITUDE<49.1].trip_id.unique())
-#off_locations #2442,2805,3115,3484,3493,3707
+# off_locations #2433, 2796, 3106, 3475, 3484, 3698
 df = df[~df.trip_id.isin(off_locations)]
 
 #id = 3115 #3484
@@ -179,27 +182,25 @@ def find_drop_times(df, long_trips):
 time_to_drop = find_drop_times(df, trip_dict)
 df = df[~df.Time.isin(time_to_drop)]
 print(get_discontinuous_trip(df, time_thres=10).keys())
-#307, 325, 379, 1105, 1199, 1686, 1765, 1909, 2523, 2639, 3084, 4023
+#307, 325, 379, 1100, 1194, 1677, 1756, 1900, 3075, 4013
 
-# pd.set_option('display.max_columns', None)
-# print(df[df.trip_id==4])
 
 # drop shorter parts second time to avoid any trip with mutltiple discontinues
 trips_to_process = get_discontinuous_trip(df, time_thres=10).keys()
 time_to_drop = find_drop_times(df, trip_dict)
 df = df[~df.Time.isin(time_to_drop)]
-print(get_discontinuous_trip(df, time_thres=10)) #3084
+print(get_discontinuous_trip(df, time_thres=10)) #3075
 
 # plt.scatter(df[df.trip_id==3075].LONGITUDE, df[df.trip_id==3075].LATITUDE, s=2, c=df[df.trip_id==3075].Time, cmap="BrBG")
 df = df[[df.trip_id!= i for i in get_discontinuous_trip(df, time_thres=10).keys()]]
 
-# 3084 is a wierd trip, just remove it from the dataset
-# plt.scatter(df[df.trip_id==3084].LONGITUDE, df[df.trip_id==3084].LATITUDE, s=2, c=df[df.trip_id==3084].Time, cmap="BrBG")
+# 3075 is a wierd trip, just remove it from the dataset
+# plt.scatter(df[df.trip_id==3075].LONGITUDE, df[df.trip_id==3075].LATITUDE, s=2, c=df[df.trip_id==3075].Time, cmap="BrBG")
 # plt.xlabel('Longitude')
 # plt.ylabel('Latitude')
 # plt.legend()
 # plt.show()
-df = df[df.trip_id!=3084]
+df = df[df.trip_id!=3075]
 #df[df.trip_id == 307][['Dati','Time','LONGITUDE','LATITUDE','SOG','trip_id']]
 
 
@@ -233,20 +234,18 @@ df = incomplete_trips(df, 1e-3)
 
 
 df.groupby(df.trip_id).count().Dati[df.groupby(df.trip_id).count().Dati<60]
-#897, 936, 996, 1050,1052,1247,1315,1624,3120,3490
+#3111, 3481
 print(df.groupby(df.trip_id).count().Dati[df.groupby(df.trip_id).count().Dati<90])
 # same as <60
 
 
-# 
-#id = 3490
-#id = 3120
+# id = 3481
 # plt.scatter(df[df.trip_id==id].LONGITUDE, df[df.trip_id==id].LATITUDE, s=2, c=df[df.trip_id==id].Time, cmap="BrBG")
 # plt.xlabel('Longitude')
 # plt.ylabel('Latitude')
 # plt.legend()
 # plt.show()
-df = df[~df.trip_id.isin([897, 936, 996, 1050,1052,1247,1315,1624,3120,3490])]
+df = df[~df.trip_id.isin([3111,3481])]
 
 
 
@@ -255,12 +254,12 @@ df = df[~df.trip_id.isin([897, 936, 996, 1050,1052,1247,1315,1624,3120,3490])]
 # # in other words, no missing data in between, but they have a location jump\
 # # remove them from the data set
 
-print(df.groupby(df.trip_id).count().Dati[df.groupby(df.trip_id).count().Dati>150]) # return 3742
-plt.scatter(df[df.trip_id==3742].LONGITUDE, df[df.trip_id==3742].LATITUDE, s=2, c=df[df.trip_id==3742].Time, cmap="BrBG")
-# 3742 is a special case where a detour happened
+print(df.groupby(df.trip_id).count().Dati[df.groupby(df.trip_id).count().Dati>150]) # return 3733
+plt.scatter(df[df.trip_id==3733].LONGITUDE, df[df.trip_id==3733].LATITUDE, s=2, c=df[df.trip_id==3733].Time, cmap="BrBG")
+# 3733 is a special case where a detour happened
 
 print(df.groupby(df.trip_id).count().Dati.min(), df[df.trip_id!=0].groupby(df.trip_id).count().Dati.max())
-# return 95,162
+# return 94,162
 
 
 
@@ -300,12 +299,6 @@ plt.show()
 
 
 
-# # add countdown
-# TRIP_DURATION = 100 
-# df["start_time"] = df.groupby("trip_id")['Time'].transform('min')
-# df["CountDown"] = TRIP_DURATION - (df['Time'] - df['start_time'])
-# df.loc[df['trip_id'] == 0, 'CountDown'] = 0
-# df.drop(['start_time'], axis=1, inplace=True)
 
 # pd.set_option('display.max_columns', 10)
 # pd.set_option('display.max_rows', 500)

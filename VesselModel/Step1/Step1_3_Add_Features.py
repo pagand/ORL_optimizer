@@ -42,8 +42,8 @@ def clean_mode(row):
 
 
 df["MODE"] = df[["MODE", "STW", "DEPTH", "trip_id"]].apply(correct_mode,axis=1)
-#df.head(120)
-df["MODE_up"] = df["MODE"].shift(periods=-1)
+df.head(120)
+# df["MODE_up"] = df["MODE"].shift(periods=-1)
 df["MODE_down"] = df["MODE"].shift(periods=1)
 df["MODE"] = df[["MODE", "MODE_up", "MODE_down"]].apply(clean_mode,axis=1)
 df.drop(["MODE_up", "MODE_down"],axis=1, inplace=True)
@@ -273,7 +273,7 @@ plt.show()
 
 df.to_csv("~/BCFerryData/feature1.csv", index=False)
 
-len(df[pd.isna(df)].trip_id)
+len(df[pd.isna(df)].trip_id) # return 324164
 # df
 # df.columns
 

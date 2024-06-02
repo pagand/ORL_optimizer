@@ -1,0 +1,17 @@
+project: ORL_optimizer
+group: env
+name: env_train
+env_name: HalfCheetah-v3
+chkpt_path: /home/james/sfu/ORL_optimizer/OtherModels/chkpt/halfcheetah_v3.pt
+load_chkpt: false
+save_chkpt_per: 1000
+sequence_num: 5
+hidden_dim: 256
+dones_cutoff:  0.6
+num_epochs: 10000
+eval_episodes: 100
+batch_size: 2048
+dynamics_lr: 1e-3
+rewards_lr: 1e-3
+dones_lr: 1e-3
+eval_seed: 0

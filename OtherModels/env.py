@@ -41,7 +41,6 @@ class Dones(nn.Module):
         x, _ = self.lstm(x)
         x = x[:, -1, :]
         x = self.linear(x)
-        x = torch.sigmoid(x)
         return x.squeeze(-1)
 
 class Env:

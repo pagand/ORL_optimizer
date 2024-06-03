@@ -37,7 +37,7 @@ def main(config: Config):
     )
 
     wandb.mark_preempting()
-    train_env = make_env(config.env_name, config.eval_seed)
+    train_env = make_env(config.env_name, config.train_seed)
     state_dim, action_dim = get_env_info(train_env)
 
     dynamics_nn = Dynamics(state_dim, action_dim, config.hidden_dim, config.sequence_num)
@@ -69,7 +69,7 @@ def main(config: Config):
 
     t = trange(config.num_epochs, desc="Training")
     for epoch in t:
-        batch = sample_batch_online(train_env, config.batch_size, config.sequence_num)
+        batch = sample_batch_online(train_env, config.batch_size, config.sequence_num, config.train_randomize)
         for k, v in batch.items():
             batch[k] = v.to(device)
 

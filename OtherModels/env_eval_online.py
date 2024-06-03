@@ -63,9 +63,9 @@ def main(config: Config):
     rewards_losses = np.array([])
     dones_losses = np.array([])
     
-    t = trange(config.eval_episodes, desc="Training")
+    t = trange(config.eval_episodes, desc="Evaluating")
     for epoch in t:
-        batch = sample_batch_online(eval_env, config.batch_size, config.sequence_num)
+        batch = sample_batch_online(eval_env, config.batch_size, config.sequence_num, config.eval_randomize)
         for k, v in batch.items():
             batch[k] = v.to(device)
 

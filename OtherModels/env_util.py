@@ -34,6 +34,9 @@ class Config:
     rewards_lr: float = 1e-3
     dones_lr: float = 1e-3
     eval_seed: int = 0
+    train_seed: int = 0
+    eval_randomize: bool = False
+    train_randomize: bool = True
 
     def refresh_name(self):
         self.name = f"{self.name}-{self.env_name}-{str(uuid.uuid4())[:8]}"
@@ -52,13 +55,14 @@ def get_env_info(env: gym.Env) -> Tuple[int, int]:
     return state_dim, action_dim
 
 def sample_batch_online(
-    env: gym.Env, batch_size: int, sequence_num: int
+    env: gym.Env, batch_size: int, sequence_num: int, randomize: bool = True
 ) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
 
-    seed = np.random.randint(0, 1e18)
-    env.seed(seed)
-    env.action_space.seed(seed)
-    env.observation_space.seed(seed)
+    if randomize:
+        seed = np.random.randint(0, 1e18)
+        env.seed(seed)
+        env.action_space.seed(seed)
+        env.observation_space.seed(seed)
     samples_left = batch_size
     state_dim = env.observation_space.shape[0]
     action_dim = env.action_space.shape[0]

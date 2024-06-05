@@ -76,7 +76,7 @@ def main(config: Config):
         dynamics_loss = criterion(dynamics, batch["next_states"][:,-1,:])
         reward_loss = criterion(reward, batch["rewards"][:,-1])
         dones_loss = criterion(dones, batch["dones"][:,-1])
-        t.set_description(f"DL:{dynamics_loss:.8f} RL: {reward_loss:.8f} DL:{dones_loss:.8f}")
+        t.set_description(f"DL:{dynamics_loss:.6f} RL: {reward_loss:.6f} DL:{dones_loss:.6f}")
         dynamics_losses = np.append(dynamics_losses, dynamics_loss.cpu().numpy())
         rewards_losses = np.append(rewards_losses, reward_loss.cpu().numpy())
         dones_losses = np.append(dones_losses, dones_loss.cpu().numpy())

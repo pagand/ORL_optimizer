@@ -1,3 +1,6 @@
+OtherModels/__pycache__/
+VesselModel/__pycache__/
+
 .idea/
 Material/
 BoilerData/
@@ -20,4 +23,3 @@ RL/.DS_Store
 
 
 *wandb*
-

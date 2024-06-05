@@ -8,40 +8,42 @@ ObsType = TypeVar("ObsType")
 ActType = TypeVar("ActType")
 
 class Dynamics(nn.Module):
-    def __init__(self, state_dim: int, action_dim: int, hidden_dim: int, num_layers: int):
-        super().__init__()
-        self.lstm = nn.LSTM(input_size=state_dim+action_dim, hidden_size=hidden_dim, num_layers=num_layers, batch_first=True)
-        self.linear = nn.Linear(hidden_dim, state_dim)
-    def forward(self, state, action):
-        x = torch.cat((state, action), dim=-1)
-        x, _ = self.lstm(x)
-        x = x[:, -1, :]
-        x = self.linear(x)
-        return x
-    
-class Reward(nn.Module):
-    def __init__(self, state_dim: int, action_dim: int, hidden_dim: int, num_layers: int):
-        super().__init__()
-        self.lstm = nn.LSTM(input_size=state_dim+action_dim, hidden_size=hidden_dim, num_layers=num_layers, batch_first=True)
-        self.linear = nn.Linear(hidden_dim, 1)
-    def forward(self, state, action):
-        x = torch.cat((state, action), dim=-1)
-        x, _ = self.lstm(x)
-        x = x[:, -1, :]
-        x = self.linear(x)
-        return x.squeeze(-1)
+    '''
+    input:
+         state: (batch, sequence_num, state_dim), 
+         action: (batch, sequence_num + future_num - 1, action_dim)
 
-class Dones(nn.Module):
-    def __init__(self, state_dim: int, action_dim: int, hidden_dim: int, num_layers: int):
+    output:
+         next_state: (batch, future_num, state_dim * out_state_num)
+    '''
+
+    state_dim: int
+    action_dim: int
+    sequence_num: int
+    future_num: int
+    out_state_num: int
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    def __init__(self, state_dim: int, action_dim: int, hidden_dim: int, sequence_num: int, out_state_num: int, future_num: int):
         super().__init__()
-        self.lstm = nn.LSTM(input_size=state_dim+action_dim, hidden_size=hidden_dim, num_layers=num_layers, batch_first=True)
-        self.linear = nn.Linear(hidden_dim, 1)
+        self.lstm = nn.LSTM(input_size=state_dim+action_dim, hidden_size=hidden_dim, num_layers=sequence_num, batch_first=True)
+        self.linear = nn.Linear(hidden_dim, state_dim*out_state_num)
+        self.future_num = future_num
+        self.state_dim = state_dim
+        self.action_dim = action_dim
+        self.sequence_num = sequence_num
+        self.out_state_num = out_state_num
+
     def forward(self, state, action):
-        x = torch.cat((state, action), dim=-1)
-        x, _ = self.lstm(x)
-        x = x[:, -1, :]
-        x = self.linear(x)
-        return x.squeeze(-1)
+        out = torch.empty((state.shape[0], 0, self.state_dim*self.out_state_num)).to(self.device)
+        for i in range(self.future_num):
+            x = torch.cat((state, action[:,i:i+self.sequence_num,:]), dim=-1)
+            x, _ = self.lstm(x)
+            x = self.linear(x[:, -1, :])
+            x = x.unsqueeze(1)
+            out = torch.cat((out, x), dim=1)
+            state = torch.cat((state[:,1:,:], x[:,:,:self.state_dim]), dim=1)
+        return out
 
 class Env:
     states : Tensor

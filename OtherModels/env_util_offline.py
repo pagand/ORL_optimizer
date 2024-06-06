@@ -127,7 +127,7 @@ def sample_batch_offline(
     '''
     output:
     states: (batch_size, sequence_num, state_dim)
-    actions: (batch_size, sequence_num+future_num-1, action_dim)
+    actions: (batch_size, sequence_num+future_num-1+out_state_num-1, action_dim)
     next_states: (batch_size, future_num, out_state_num * state_dim)
     '''
     if randomize:
@@ -138,7 +138,7 @@ def sample_batch_offline(
     state_dim = dataset["state"].shape[1]
     action_dim = dataset["action"].shape[1]
     states = torch.empty((0, sequence_num, state_dim))
-    actions = torch.empty((0, sequence_num+future_num-1, action_dim))
+    actions = torch.empty((0, sequence_num+future_num+out_state_num-2, action_dim))
     next_states = torch.empty((0, future_num, out_state_num*state_dim))
     while samples_left > 0:
         index = np.random.randint(N)
@@ -151,7 +151,7 @@ def sample_batch_offline(
         #print("start", start, "stop", stop, "stop_", stop_, "samples_left", samples_left)
         states_ = np.stack([dataset["state"][i:i+sequence_num] for i in range(start, stop)], axis=0)
         states = torch.cat((states, torch.tensor(states_, dtype=torch.float32)), dim=0)
-        actions_ = np.stack([dataset["action"][i:i+sequence_num+future_num-1] for i in range(start, stop)], axis=0)
+        actions_ = np.stack([dataset["action"][i:i+sequence_num+future_num+out_state_num-2] for i in range(start, stop)], axis=0)
         actions = torch.cat((actions, torch.tensor(actions_, dtype=torch.float32)), dim=0)
         
         next_states__ = np.array([np.concatenate(dataset["next_state"][i:i+out_state_num])

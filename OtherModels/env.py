@@ -3,6 +3,7 @@ import torch.nn as nn
 
 from typing import TypeVar, List, Tuple, Dict, Any
 from torch import Tensor
+from torch.nn.functional import pad
 
 ObsType = TypeVar("ObsType")
 ActType = TypeVar("ActType")
@@ -22,24 +23,45 @@ class Dynamics(nn.Module):
     sequence_num: int
     future_num: int
     out_state_num: int
+    use_future_act: bool
+    state_action_dim: int
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    def __init__(self, state_dim: int, action_dim: int, hidden_dim: int, sequence_num: int, out_state_num: int, future_num: int):
+    def __init__(self, state_dim: int, action_dim: int, hidden_dim: int, sequence_num: int, out_state_num: int, future_num: int,
+                 use_future_act: bool = False):
         super().__init__()
-        self.lstm = nn.LSTM(input_size=state_dim+action_dim, hidden_size=hidden_dim, num_layers=sequence_num, batch_first=True)
+        self.state_action_dim = state_dim + action_dim
+        if use_future_act:
+            if self.state_action_dim % 2 == 1:
+                self.state_action_dim += 1            
+        self.lstm = nn.LSTM(input_size=self.state_action_dim, hidden_size=hidden_dim, num_layers=sequence_num+out_state_num-1, batch_first=True)
+        self.dropout = nn.Dropout(0.5)
         self.linear = nn.Linear(hidden_dim, state_dim*out_state_num)
         self.future_num = future_num
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.sequence_num = sequence_num
         self.out_state_num = out_state_num
+        self.use_future_act = use_future_act
 
-    def forward(self, state, action):
+    def forward(self, state, action, is_eval=False):
         out = torch.empty((state.shape[0], 0, self.state_dim*self.out_state_num)).to(self.device)
         for i in range(self.future_num):
-            x = torch.cat((state, action[:,i:i+self.sequence_num,:]), dim=-1)
+            x = torch.cat((action[:,i:i+self.sequence_num,:], state), dim=-1)
+            if self.state_action_dim > self.state_dim + self.action_dim:
+                x = pad(x, (0,1))
+            if self.out_state_num > 1 and self.use_future_act:
+                if is_eval:
+                    future_act = torch.stack([action[:,i+self.sequence_num-1,:] for _ in range(self.out_state_num-1)], dim=1)
+                else:
+                    future_act = action[:,i+self.sequence_num:i+self.sequence_num+self.out_state_num-1,:]
+                future_act = pad(future_act, (0, self.state_action_dim-self.action_dim))
+                x = torch.cat((x, future_act), dim=1)
             x, _ = self.lstm(x)
-            x = self.linear(x[:, -1, :])
+            x = x[:,-1,:]
+            if not is_eval:
+                x = self.dropout(x)
+            x = self.linear(x)
             x = x.unsqueeze(1)
             out = torch.cat((out, x), dim=1)
             state = torch.cat((state[:,1:,:], x[:,:,:self.state_dim]), dim=1)

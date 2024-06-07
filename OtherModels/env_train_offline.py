@@ -45,7 +45,7 @@ def main(config: Config):
         config_dict = checkpoint["config"]
         print("Checkpoint loaded from", config.chkpt_path)
 
-    dynamics_optimizer = torch.optim.Adam(dynamics_nn.parameters(), lr=config.dynamics_lr)
+    dynamics_optimizer = torch.optim.Adam(dynamics_nn.parameters(), lr=config.dynamics_lr, weight_decay=config.dynamics_weight_decay)
     criterion = torch.nn.MSELoss()
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

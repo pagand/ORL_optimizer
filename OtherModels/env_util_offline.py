@@ -26,6 +26,7 @@ class Config:
     eval_episodes: int = 100
     batch_size: int = 512
     dynamics_lr: float = 1e-3
+    dynamics_weight_decay: float = 1e-6
     eval_seed: int = 0
     train_seed: int = 0
     eval_randomize: bool = True
@@ -144,13 +145,14 @@ def sample_batch_offline(
         index = np.random.randint(N)
         start = dataset["start"][index]
         stop_ = dataset["stop"][index]
-        if stop_-start < sequence_num+future_num:
+        if stop_-start < sequence_num+future_num+out_state_num-1:
             continue
-        step = min(samples_left, stop_-start-sequence_num-future_num+2)
+        step = min(samples_left, stop_-start-sequence_num-future_num-out_state_num+2)
         stop = start + step
         #print("start", start, "stop", stop, "stop_", stop_, "samples_left", samples_left)
         states_ = np.stack([dataset["state"][i:i+sequence_num] for i in range(start, stop)], axis=0)
         states = torch.cat((states, torch.tensor(states_, dtype=torch.float32)), dim=0)
+
         actions_ = np.stack([dataset["action"][i:i+sequence_num+future_num+out_state_num-2] for i in range(start, stop)], axis=0)
         actions = torch.cat((actions, torch.tensor(actions_, dtype=torch.float32)), dim=0)
         

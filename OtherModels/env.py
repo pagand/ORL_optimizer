@@ -34,8 +34,9 @@ class Dynamics(nn.Module):
         if use_future_act:
             if self.state_action_dim % 2 == 1:
                 self.state_action_dim += 1            
-        self.lstm = nn.LSTM(input_size=self.state_action_dim, hidden_size=hidden_dim, num_layers=sequence_num+out_state_num-1, batch_first=True)
-        self.dropout = nn.Dropout(0.5)
+        self.lstm = nn.LSTM(input_size=self.state_action_dim, hidden_size=hidden_dim, num_layers=sequence_num+out_state_num-1, 
+                            batch_first=True)
+        #self.dropout = nn.Dropout(0.1)
         self.linear = nn.Linear(hidden_dim, state_dim*out_state_num)
         self.future_num = future_num
         self.state_dim = state_dim
@@ -59,8 +60,8 @@ class Dynamics(nn.Module):
                 x = torch.cat((x, future_act), dim=1)
             x, _ = self.lstm(x)
             x = x[:,-1,:]
-            if not is_eval:
-                x = self.dropout(x)
+            #if not is_eval:
+            #    x = self.dropout(x)
             x = self.linear(x)
             x = x.unsqueeze(1)
             out = torch.cat((out, x), dim=1)

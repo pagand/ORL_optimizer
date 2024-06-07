@@ -56,7 +56,7 @@ def main(config: Config):
     t = trange(config.num_epochs, desc="Training")
     for epoch in t:
         states, actions, next_states = sample_batch_offline(
-            dataset, config.batch_size, config.sequence_num, config.future_num, config.out_state_num,
+            dataset, config.batch_size, config.sequence_num, config.future_num, config.out_state_num, is_eval=False,
             randomize=config.train_randomize)
         states = states.to(device)
         actions = actions.to(device)

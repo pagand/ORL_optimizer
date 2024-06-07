@@ -123,6 +123,7 @@ def sample_batch_offline(
     sequence_num: int,
     future_num: int,
     out_state_num: int,
+    is_eval: bool,
     randomize: bool = False,
 ) -> Tuple[Tensor, Tensor, Tensor]:
     '''
@@ -142,7 +143,11 @@ def sample_batch_offline(
     actions = torch.empty((0, sequence_num+future_num+out_state_num-2, action_dim))
     next_states = torch.empty((0, future_num, out_state_num*state_dim))
     while samples_left > 0:
-        index = np.random.randint(N)
+        # 90% of the data is used for training, ~10% for evaluation
+        if is_eval:
+            index = np.random.randint(N*0.9+1000, N)
+        else:
+            index = np.random.randint(0, N*0.9)
         start = dataset["start"][index]
         stop_ = dataset["stop"][index]
         if stop_-start < sequence_num+future_num+out_state_num-1:

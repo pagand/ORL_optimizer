@@ -59,7 +59,7 @@ def main(config: Config):
     for epoch in t:
         states, actions, next_states = sample_batch_offline(
             dataset, config.batch_size, config.sequence_num, config.future_num, 
-            config.out_state_num, config.eval_randomize)
+            config.out_state_num, is_eval=True, randomize=config.eval_randomize)
         states = states.to(device)
         actions = actions.to(device)
         #next_states = next_states.to(device)

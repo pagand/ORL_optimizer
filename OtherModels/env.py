@@ -46,11 +46,12 @@ class Dynamics(nn.Module):
         self.out_state_num = out_state_num
         self.use_future_act = use_future_act
 
-    def forward(self, state, action, is_eval=False):
+    def forward(self, state, action, is_eval=False, is_ar=False):
         s_ = torch.empty((state.shape[0], 0, self.state_dim*self.out_state_num)).to(self.device)
         r_ = torch.empty((state.shape[0], 0, self.out_state_num)).to(self.device)
+        state_= state[:,:self.sequence_num,:]
         for i in range(self.future_num):
-            x = torch.cat((action[:,i:i+self.sequence_num,:], state), dim=-1)
+            x = torch.cat((action[:,i:i+self.sequence_num,:], state_), dim=-1)
             if self.state_action_dim > self.state_dim + self.action_dim:
                 x = pad(x, (0,1))
             if self.out_state_num > 1 and self.use_future_act:
@@ -70,7 +71,10 @@ class Dynamics(nn.Module):
             r = r.unsqueeze(1)
             s_ = torch.cat((s_, s), dim=1)
             r_ = torch.cat((r_, r), dim=1)
-            state = torch.cat((state[:,1:,:], s[:,:,:self.state_dim]), dim=1)
+            if is_ar:
+                state_ = torch.cat((state_[:,1:,:], s[:,:,:self.state_dim]), dim=1)
+            else:
+                state_ = state[:,i+1:i+self.sequence_num+1,:]
         return (s_, r_)
 
 class Env:

@@ -31,6 +31,10 @@ class Config:
     train_seed: int = 0
     eval_randomize: bool = True
     train_randomize: bool = True
+    is_ar: bool = False
+    holdout_per: int = 500
+    holdout_num: int = 10
+    holdout_randomize: bool = True
 
     def refresh_name(self):
         self.name = f"{self.name}-{self.dataset_name}-{str(uuid.uuid4())[:8]}"
@@ -124,6 +128,7 @@ def sample_batch_offline(
     future_num: int,
     out_state_num: int,
     is_eval: bool,
+    is_holdout: bool = False,
     randomize: bool = False,
 ) -> Tuple[Tensor, Tensor, Tensor]:
     '''
@@ -140,7 +145,7 @@ def sample_batch_offline(
     samples_left = batch_size
     state_dim = dataset["state"].shape[1]
     action_dim = dataset["action"].shape[1]
-    states = torch.empty((0, sequence_num, state_dim))
+    states = torch.empty((0, sequence_num+future_num-1, state_dim))
     actions = torch.empty((0, sequence_num+future_num+out_state_num-2, action_dim))
     next_states = torch.empty((0, future_num, out_state_num*state_dim))
     rewards = torch.empty((0, future_num, out_state_num))
@@ -149,7 +154,10 @@ def sample_batch_offline(
         if is_eval:
             index = np.random.randint(N*0.9+1000, N)
         else:
-            index = np.random.randint(0, N*0.9)
+            if is_holdout:
+                index = np.random.randint(N*0.8+1000, N*0.9)
+            else:
+                index = np.random.randint(0, N*0.8)
         start = dataset["start"][index]
         stop_ = dataset["stop"][index]
         if stop_-start < sequence_num+future_num+out_state_num-1:
@@ -157,7 +165,7 @@ def sample_batch_offline(
         step = min(samples_left, stop_-start-sequence_num-future_num-out_state_num+2)
         stop = start + step
         #print("start", start, "stop", stop, "stop_", stop_, "samples_left", samples_left)
-        states_ = np.stack([dataset["state"][i:i+sequence_num] for i in range(start, stop)], axis=0)
+        states_ = np.stack([dataset["state"][i:i+sequence_num+future_num-1] for i in range(start, stop)], axis=0)
         states = torch.cat((states, torch.tensor(states_, dtype=torch.float32)), dim=0)
 
         actions_ = np.stack([dataset["action"][i:i+sequence_num+future_num+out_state_num-2] for i in range(start, stop)], axis=0)

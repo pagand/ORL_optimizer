@@ -65,7 +65,7 @@ def main(config: Config):
         actions = actions.to(device)
         #next_states = next_states.to(device)
         with torch.inference_mode():
-            next_states_pred, rewards_pred = dynamics_nn(states, actions, is_eval=True)
+            next_states_pred, rewards_pred = dynamics_nn(states, actions, is_eval=True, is_ar=config.is_ar)
 
         next_states_pred = next_states_pred.cpu().detach()
         #print("next_states_pred", next_states_pred[0,-1,:5])

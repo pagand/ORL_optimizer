@@ -52,18 +52,19 @@ def main(config: Config):
     dynamics_nn.to(device)
 
     dynamics_losses = np.array([])
+    hold_out_losses = np.array([])
  
     t = trange(config.num_epochs, desc="Training")
     for epoch in t:
         states, actions, next_states, rewards = sample_batch_offline(
             dataset, config.batch_size, config.sequence_num, config.future_num, config.out_state_num, is_eval=False,
-            randomize=config.train_randomize)
+            is_holdout=False, randomize=config.train_randomize)
         rewards = rewards.to(device)
         states = states.to(device)
         actions = actions.to(device)
         next_states = next_states.to(device)
         dynamics_nn.train()
-        next_states_pred, rewards_pred = dynamics_nn(states, actions)
+        next_states_pred, rewards_pred = dynamics_nn(states, actions, is_eval=False, is_ar=config.is_ar)
         #print("rewards_pred", rewards_pred.shape, "rewards", rewards.shape)
         #print("next_states_pred", next_states_pred.shape, "next_states", next_states.shape)
         loss = criterion(next_states_pred, next_states) + criterion(rewards_pred, rewards)
@@ -72,7 +73,10 @@ def main(config: Config):
         dynamics_optimizer.step()
         loss_ = loss.cpu().detach().numpy()
         dynamics_losses = np.append(dynamics_losses, loss_)
-        t.set_description(f"DL:{loss_:.6f} DLM:{np.mean(dynamics_losses):.6f})")
+        if config.holdout_per>0 and len(hold_out_losses)>0:
+            t.set_description(f"DL:{loss_:.6f} DLM:{np.mean(dynamics_losses):.6f} HLM:{np.mean(hold_out_losses[:]):.6f}")
+        else:
+            t.set_description(f"DL:{loss_:.6f} DLM:{np.mean(dynamics_losses):.6f})")
 
         wandb.log({"dynamics_loss": loss.item(),
                      "dynamics_loss_mean": np.mean(dynamics_losses),
@@ -84,6 +88,27 @@ def main(config: Config):
                 "dynamics_nn": dynamics_nn.state_dict(),
                 "config": asdict(config)
             }, config.chkpt_path)
+
+        #evaluate holdout data
+        if config.holdout_per>0 and (epoch % config.holdout_per == 0 or epoch == config.num_epochs-1):
+            for j in range(config.holdout_num):
+                states, actions, next_states, rewards = sample_batch_offline(
+                    dataset, config.holdout_num, config.sequence_num, config.future_num, config.out_state_num, is_eval=True,
+                    is_holdout=True, randomize=config.holdout_randomize)
+                rewards = rewards.to(device)
+                states = states.to(device)
+                actions = actions.to(device)
+                next_states = next_states.to(device)
+                dynamics_nn.eval()
+                with torch.inference_mode():
+                    next_states_pred, rewards_pred = dynamics_nn(states, actions, is_eval=True, is_ar=config.is_ar)
+                loss = criterion(next_states_pred, next_states)
+                loss = loss.cpu().detach().numpy()
+                wandb.log({"holdout_loss": loss, 
+                            "holdout_loss_mean": np.mean(hold_out_losses),
+                            "holdout_loss_std": np.std(hold_out_losses)
+                })
+                hold_out_losses = np.append(hold_out_losses, loss)
 
     wandb.finish()
     print("Checkpoint saved to", config.chkpt_path)

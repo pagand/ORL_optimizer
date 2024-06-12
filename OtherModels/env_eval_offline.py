@@ -57,19 +57,19 @@ def main(config: Config):
  
     t = trange(config.eval_episodes, desc="Training")
     for epoch in t:
-        states, actions, next_states = sample_batch_offline(
+        states, actions, next_states, rewards = sample_batch_offline(
             dataset, config.batch_size, config.sequence_num, config.future_num, 
             config.out_state_num, is_eval=True, randomize=config.eval_randomize)
+        rewards = rewards.to(device)
         states = states.to(device)
         actions = actions.to(device)
         #next_states = next_states.to(device)
         with torch.inference_mode():
-            next_states_pred = dynamics_nn(states, actions, is_eval=True)
+            next_states_pred, rewards_pred = dynamics_nn(states, actions, is_eval=True)
 
         next_states_pred = next_states_pred.cpu().detach()
         #print("next_states_pred", next_states_pred[0,-1,:5])
         #print("next_states", next_states[0,-1,:5])
-        #print("next_states_pred", next_states_pred.shape)
         #loss = criterion(next_states_pred[:,-10:,:state_dim], next_states[:,-10:,:state_dim])
         loss = criterion(next_states_pred[:,:,:state_dim], next_states[:,:,:state_dim])
         loss_ = loss.cpu().detach().numpy()

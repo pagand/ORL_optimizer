@@ -55,15 +55,18 @@ def main(config: Config):
  
     t = trange(config.num_epochs, desc="Training")
     for epoch in t:
-        states, actions, next_states = sample_batch_offline(
+        states, actions, next_states, rewards = sample_batch_offline(
             dataset, config.batch_size, config.sequence_num, config.future_num, config.out_state_num, is_eval=False,
             randomize=config.train_randomize)
+        rewards = rewards.to(device)
         states = states.to(device)
         actions = actions.to(device)
         next_states = next_states.to(device)
         dynamics_nn.train()
-        next_states_pred = dynamics_nn(states, actions)
-        loss = criterion(next_states_pred, next_states)
+        next_states_pred, rewards_pred = dynamics_nn(states, actions)
+        #print("rewards_pred", rewards_pred.shape, "rewards", rewards.shape)
+        #print("next_states_pred", next_states_pred.shape, "next_states", next_states.shape)
+        loss = criterion(next_states_pred, next_states) + criterion(rewards_pred, rewards)
         dynamics_optimizer.zero_grad()
         loss.backward()
         dynamics_optimizer.step()

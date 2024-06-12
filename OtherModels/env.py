@@ -38,6 +38,7 @@ class Dynamics(nn.Module):
                             batch_first=True)
         #self.dropout = nn.Dropout(0.1)
         self.linear = nn.Linear(hidden_dim, state_dim*out_state_num)
+        self.linear2 = nn.Linear(hidden_dim, out_state_num)
         self.future_num = future_num
         self.state_dim = state_dim
         self.action_dim = action_dim
@@ -46,7 +47,8 @@ class Dynamics(nn.Module):
         self.use_future_act = use_future_act
 
     def forward(self, state, action, is_eval=False):
-        out = torch.empty((state.shape[0], 0, self.state_dim*self.out_state_num)).to(self.device)
+        s_ = torch.empty((state.shape[0], 0, self.state_dim*self.out_state_num)).to(self.device)
+        r_ = torch.empty((state.shape[0], 0, self.out_state_num)).to(self.device)
         for i in range(self.future_num):
             x = torch.cat((action[:,i:i+self.sequence_num,:], state), dim=-1)
             if self.state_action_dim > self.state_dim + self.action_dim:
@@ -62,11 +64,14 @@ class Dynamics(nn.Module):
             x = x[:,-1,:]
             #if not is_eval:
             #    x = self.dropout(x)
-            x = self.linear(x)
-            x = x.unsqueeze(1)
-            out = torch.cat((out, x), dim=1)
-            state = torch.cat((state[:,1:,:], x[:,:,:self.state_dim]), dim=1)
-        return out
+            s = self.linear(x)
+            s = s.unsqueeze(1)
+            r = self.linear2(x)
+            r = r.unsqueeze(1)
+            s_ = torch.cat((s_, s), dim=1)
+            r_ = torch.cat((r_, r), dim=1)
+            state = torch.cat((state[:,1:,:], s[:,:,:self.state_dim]), dim=1)
+        return (s_, r_)
 
 class Env:
     states : Tensor

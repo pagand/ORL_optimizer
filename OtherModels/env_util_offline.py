@@ -131,6 +131,7 @@ def sample_batch_offline(
     states: (batch_size, sequence_num, state_dim)
     actions: (batch_size, sequence_num+future_num-1+out_state_num-1, action_dim)
     next_states: (batch_size, future_num, out_state_num * state_dim)
+    rewards: (batch_size, future_num, out_state_num)
     '''
     if randomize:
         current_time = int(time.time())
@@ -142,6 +143,7 @@ def sample_batch_offline(
     states = torch.empty((0, sequence_num, state_dim))
     actions = torch.empty((0, sequence_num+future_num+out_state_num-2, action_dim))
     next_states = torch.empty((0, future_num, out_state_num*state_dim))
+    rewards = torch.empty((0, future_num, out_state_num))
     while samples_left > 0:
         # 90% of the data is used for training, ~10% for evaluation
         if is_eval:
@@ -161,9 +163,17 @@ def sample_batch_offline(
         actions_ = np.stack([dataset["action"][i:i+sequence_num+future_num+out_state_num-2] for i in range(start, stop)], axis=0)
         actions = torch.cat((actions, torch.tensor(actions_, dtype=torch.float32)), dim=0)
         
-        next_states__ = np.array([np.concatenate(dataset["next_state"][i:i+out_state_num])
+        next_states__ = np.array([np.concatenate(dataset["next_state"][i:i+out_state_num], axis=-1)
                                         for i in range(start+sequence_num-1, stop+sequence_num+future_num-1-1)])
         next_states_ = np.stack([next_states__[i:i+future_num] for i in range(0, step)], axis=0)        
         next_states = torch.cat((next_states, torch.tensor(next_states_, dtype=torch.float32)), dim=0)
+
+        #print("rewards", dataset["reward"].shape)
+        rewards____ = np.expand_dims(dataset["reward"], axis=-1)
+        rewards__ = np.array([np.concatenate(rewards____[i:i+out_state_num], axis=-1)
+                                        for i in range(start+sequence_num-1, stop+sequence_num+future_num-1-1)])
+        rewards_ = np.stack([rewards__[i:i+future_num] for i in range(0, step)], axis=0)
+        rewards = torch.cat((rewards, torch.tensor(rewards_, dtype=torch.float32)), dim=0)
+
         samples_left -= step
-    return states, actions, next_states
+    return states, actions, next_states, rewards

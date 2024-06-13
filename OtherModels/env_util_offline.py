@@ -15,7 +15,8 @@ class Config:
     group: str = "env"
     name: str = "env_train_offline"
     dataset_name: str = "halfcheetah-medium-v2"
-    chkpt_path: str = "/home/james/sfu/ORL_optimizer/OtherModels/chkpt/halfcheetah_medium_v2.pt"
+    chkpt_path_nar: str = "/home/james/sfu/ORL_optimizer/OtherModels/chkpt/halfcheetah_medium_v2_nar.pt"
+    chkpt_path_ar: str = "/home/james/sfu/ORL_optimizer/OtherModels/chkpt/halfcheetah_medium_v2_ar.pt"
     load_chkpt: bool = True
     save_chkpt_per: int = 1000
     sequence_num: int = 5
@@ -185,3 +186,11 @@ def sample_batch_offline(
 
         samples_left -= step
     return states, actions, next_states, rewards
+
+def get_rsquare(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    y_true = y_true.flatten()
+    y_pred = y_pred.flatten()
+    y_mean = np.mean(y_true)
+    ss_tot = np.sum((y_true-y_mean)**2)
+    ss_res = np.sum((y_true-y_pred)**2)
+    return 1 - ss_res/ss_tot

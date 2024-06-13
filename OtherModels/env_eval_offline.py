@@ -13,7 +13,7 @@ import pyrallis
 import uuid
 from tqdm.auto import trange
 
-from env_util_offline import Config, qlearning_dataset, get_env_info, sample_batch_offline
+from env_util_offline import Config, qlearning_dataset, get_env_info, sample_batch_offline, get_rsquare
 from env import Dynamics
 
 @pyrallis.wrap()
@@ -39,13 +39,17 @@ def main(config: Config):
     dynamics_nn = Dynamics(state_dim=state_dim, action_dim=action_dim, hidden_dim=config.hidden_dim,
                             sequence_num=config.sequence_num, out_state_num=config.out_state_num,
                             future_num=config.future_num)
-    if os.path.exists(config.chkpt_path):
-        checkpoint = torch.load(config.chkpt_path)
+    if config.is_ar:
+        chkpt_path = config.chkpt_path_ar
+    else:
+        chkpt_path = config.chkpt_path_nar
+    if os.path.exists(chkpt_path):
+        checkpoint = torch.load(chkpt_path)
         dynamics_nn.load_state_dict(checkpoint["dynamics_nn"])
         config_dict = checkpoint["config"]
-        print("Checkpoint loaded from", config.chkpt_path)
+        print("Checkpoint loaded from", chkpt_path)
     else:
-        print("No checkpoint found at", config.chkpt_path)
+        print("No checkpoint found at", chkpt_path)
         return
 
     criterion = torch.nn.MSELoss()
@@ -74,11 +78,14 @@ def main(config: Config):
         loss = criterion(next_states_pred[:,:,:state_dim], next_states[:,:,:state_dim])
         loss_ = loss.cpu().detach().numpy()
         dynamics_losses = np.append(dynamics_losses, loss_)
-        t.set_description(f"DL:{loss_:.6f} DLM:{np.mean(dynamics_losses):.6f})")
+        rsqr = get_rsquare(next_states_pred[:,:,:state_dim].detach().numpy(), 
+                           next_states[:,:,:state_dim].detach().numpy())
+        t.set_description(f"DL:{loss_:.6f} DLM:{np.mean(dynamics_losses):.6f} R2:{rsqr:.6f}")
 
         wandb.log({"dynamics_loss": loss.item(),
                      "dynamics_loss_mean": np.mean(dynamics_losses),
-                     "dynamics_loss_std": np.std(dynamics_losses)
+                     "dynamics_loss_std": np.std(dynamics_losses),
+                     "rsqr": rsqr
         })
 
     wandb.finish()

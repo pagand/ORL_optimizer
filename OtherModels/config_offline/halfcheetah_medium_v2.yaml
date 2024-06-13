@@ -2,7 +2,8 @@ project: ORL_optimizer
 group: env
 name: env_train_offline
 dataset_name: halfcheetah-medium-v2
-chkpt_path: /home/james/sfu/ORL_optimizer/OtherModels/chkpt/halfcheetah_medium_v2_ar.pt
+chkpt_path_nar: /home/james/sfu/ORL_optimizer/OtherModels/chkpt/halfcheetah_medium_v2_nar.pt
+chkpt_path_ar: /home/james/sfu/ORL_optimizer/OtherModels/chkpt/halfcheetah_medium_v2_ar.pt
 load_chkpt: true
 save_chkpt_per: 500
 sequence_num: 3
@@ -19,3 +20,6 @@ train_seed:  0
 eval_randomize: false
 train_randomize: true
 is_ar: true
+holdout_per: 5
+holdout_num: 5
+holdout_randomize: True

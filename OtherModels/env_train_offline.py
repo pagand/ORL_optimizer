@@ -39,11 +39,15 @@ def main(config: Config):
     dynamics_nn = Dynamics(state_dim=state_dim, action_dim=action_dim, hidden_dim=config.hidden_dim,
                             sequence_num=config.sequence_num, out_state_num=config.out_state_num,
                             future_num=config.future_num)
-    if config.load_chkpt and os.path.exists(config.chkpt_path):
-        checkpoint = torch.load(config.chkpt_path)
+    if config.is_ar:
+        chkpt_path = config.chkpt_path_ar
+    else:
+        chkpt_path = config.chkpt_path_nar
+    if config.load_chkpt and os.path.exists(chkpt_path):
+        checkpoint = torch.load(chkpt_path)
         dynamics_nn.load_state_dict(checkpoint["dynamics_nn"])
         config_dict = checkpoint["config"]
-        print("Checkpoint loaded from", config.chkpt_path)
+        print("Checkpoint loaded from", chkpt_path)
 
     dynamics_optimizer = torch.optim.Adam(dynamics_nn.parameters(), lr=config.dynamics_lr, weight_decay=config.dynamics_weight_decay)
     criterion = torch.nn.MSELoss()
@@ -87,7 +91,7 @@ def main(config: Config):
             torch.save({
                 "dynamics_nn": dynamics_nn.state_dict(),
                 "config": asdict(config)
-            }, config.chkpt_path)
+            }, chkpt_path)
 
         #evaluate holdout data
         if config.holdout_per>0 and (epoch % config.holdout_per == 0 or epoch == config.num_epochs-1):
@@ -104,14 +108,14 @@ def main(config: Config):
                     next_states_pred, rewards_pred = dynamics_nn(states, actions, is_eval=True, is_ar=config.is_ar)
                 loss = criterion(next_states_pred, next_states)
                 loss = loss.cpu().detach().numpy()
+                hold_out_losses = np.append(hold_out_losses, loss)                
                 wandb.log({"holdout_loss": loss, 
                             "holdout_loss_mean": np.mean(hold_out_losses),
                             "holdout_loss_std": np.std(hold_out_losses)
                 })
-                hold_out_losses = np.append(hold_out_losses, loss)
 
     wandb.finish()
-    print("Checkpoint saved to", config.chkpt_path)
+    print("Checkpoint saved to", chkpt_path)
 
 if __name__ == "__main__":
     main()

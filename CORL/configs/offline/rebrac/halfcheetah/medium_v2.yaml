@@ -23,6 +23,6 @@ num_epochs: 1000
 num_updates_on_epoch: 1000
 policy_freq: 2
 policy_noise: 0.2
-project: ReBRAC
+project: CORL
 tau: 0.005
 train_seed: 0

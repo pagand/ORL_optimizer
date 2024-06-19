@@ -1,9 +1,12 @@
 # source: https://github.com/tinkoff-ai/ReBRAC
-# https://arxiv.org/abs/2305.09836
+# https://arxiv.org/abs/2305.09836\
+
+wandb_log = True
 
 import os
 
 os.environ["TF_CUDNN_DETERMINISTIC"] = "1"  # For reproducibility
+os.environ["WANDB_MODE"] = "online"  # For cloud sync
 
 import math
 import uuid
@@ -61,7 +64,7 @@ class Config:
     normalize_states: bool = False
     # evaluation params
     eval_episodes: int = 10
-    eval_every: int = 5
+    eval_every: int = int(5)
     # general params
     train_seed: int = 0
     eval_seed: int = 42
@@ -597,14 +600,17 @@ def main(config: Config):
     dict_config = asdict(config)
     dict_config["mlc_job_name"] = os.environ.get("PLATFORM_JOB_NAME")
 
-    wandb.init(
-        config=dict_config,
-        project=config.project,
-        group=config.group,
-        name=config.name,
-        id=str(uuid.uuid4()),
-    )
-    wandb.mark_preempting()
+    if wandb_log:
+
+        wandb.init(
+            config=dict_config,
+            project=config.project,
+            group=config.group,
+            name=config.name,
+            id=str(uuid.uuid4()),
+        )
+        wandb.mark_preempting()
+
     buffer = ReplayBuffer()
     buffer.create_from_d4rl(
         config.dataset_name, config.normalize_reward, config.normalize_states
@@ -732,9 +738,10 @@ def main(config: Config):
         )
         # log mean over epoch for each metric
         mean_metrics = update_carry["metrics"].compute()
-        wandb.log(
-            {"epoch": epoch, **{f"ReBRAC/{k}": v for k, v in mean_metrics.items()}}
-        )
+        if wandb_log:
+            wandb.log(
+                {"epoch": epoch, **{f"ReBRAC/{k}": v for k, v in mean_metrics.items()}}
+            )
 
         if epoch % config.eval_every == 0 or epoch == config.num_epochs - 1:
             eval_returns = evaluate(
@@ -745,15 +752,16 @@ def main(config: Config):
                 seed=config.eval_seed,
             )
             normalized_score = eval_env.get_normalized_score(eval_returns) * 100.0
-            wandb.log(
-                {
-                    "epoch": epoch,
-                    "eval/return_mean": np.mean(eval_returns),
-                    "eval/return_std": np.std(eval_returns),
-                    "eval/normalized_score_mean": np.mean(normalized_score),
-                    "eval/normalized_score_std": np.std(normalized_score),
-                }
-            )
+            if wandb_log:
+                wandb.log(
+                    {
+                        "epoch": epoch,
+                        "eval/return_mean": np.mean(eval_returns),
+                        "eval/return_std": np.std(eval_returns),
+                        "eval/normalized_score_mean": np.mean(normalized_score),
+                        "eval/normalized_score_std": np.std(normalized_score),
+                    }
+                    )
 
 
 if __name__ == "__main__":

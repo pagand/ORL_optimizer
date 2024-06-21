@@ -15,6 +15,16 @@ from tqdm.auto import trange
 
 from env_util_offline import Config, qlearning_dataset, get_env_info, sample_batch_offline
 from env import Dynamics
+from torch import nn
+
+class MeanFourthPowerError(nn.Module):
+    def __init__(self):
+        super(MeanFourthPowerError, self).__init__()
+
+    def forward(self, inputs, targets):
+        # Compute the fourth power of the element-wise difference
+        loss = torch.mean((inputs - targets) ** 4)
+        return loss
 
 @pyrallis.wrap()
 def main(config: Config):
@@ -51,6 +61,7 @@ def main(config: Config):
 
     dynamics_optimizer = torch.optim.Adam(dynamics_nn.parameters(), lr=config.dynamics_lr, weight_decay=config.dynamics_weight_decay)
     criterion = torch.nn.MSELoss()
+    #criterion = MeanFourthPowerError()
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     dynamics_nn.to(device)

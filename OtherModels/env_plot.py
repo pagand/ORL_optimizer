@@ -38,6 +38,24 @@ def plot_states(states, states_nar, states_ar, plot_idx, draw_cnt=50):
     pan_handler = panhandler(figure)
     plt.show()
 
+def plot_rewards(rewards, rewards_nar, rewards_ar):
+    with plt.ioff():
+        figure, axis = plt.subplots()    
+    plt.plot(rewards[0, :], label="True")
+    plt.plot(rewards_nar[0, :], label="NAR")
+    plt.plot(rewards_ar[0, :], label="AR")
+    ymin = min(np.min(rewards[0, :]), np.min(rewards_nar[0, :]), np.min(rewards_ar[0, :]))
+    ymax = max(np.max(rewards[0, :]), np.max(rewards_nar[0, :]), np.max(rewards_ar[0, :]))
+    plt.ylim(ymin*5, ymax*5)
+    plt.xlabel("Time")
+    plt.ylabel("Reward")
+    plt.legend()
+    disconnect_zoom = zoom_factory(axis)
+    # Enable scrolling and panning with the help of MPL
+    # Interactions library function like panhandler.
+    pan_handler = panhandler(figure)    
+    plt.show()
+
 @pyrallis.wrap()
 def main(config: Config):
     np.random.seed(config.eval_seed)
@@ -68,10 +86,10 @@ def main(config: Config):
     actions = actions.to(device)
     next_states = next_states.cpu().detach().numpy()
     with torch.inference_mode():
-        next_states_pred_nar, rewards_pred = dynamics_nn(states, actions, is_eval=True, is_ar=False)
+        next_states_pred_nar, rewards_pred_nar = dynamics_nn(states, actions, is_eval=True, is_ar=False)
 
     next_states_pred_nar = next_states_pred_nar.cpu().detach().numpy()
-    rsqr_nar = get_rsquare(next_states_pred_nar[:,:,:state_dim], next_states[:,:,:state_dim])
+    rsqr_nar = get_rsquare(next_states[:,:,:state_dim], next_states_pred_nar[:,:,:state_dim])
 
     dynamics_nn = Dynamics(state_dim=state_dim, action_dim=action_dim, hidden_dim=config.hidden_dim,
                             sequence_num=config.sequence_num, out_state_num=config.out_state_num,
@@ -89,23 +107,34 @@ def main(config: Config):
     dynamics_nn.to(device)
 
     with torch.inference_mode():
-        next_states_pred_ar, rewards_pred = dynamics_nn(states, actions, is_eval=True, is_ar=True)
+        next_states_pred_ar, rewards_pred_ar = dynamics_nn(states, actions, is_eval=True, is_ar=True)
 
     next_states_pred_ar = next_states_pred_ar.cpu().detach().numpy()
-    rsqr_ar = get_rsquare(next_states_pred_ar[:,:,:state_dim], next_states[:,:,:state_dim])
+    rsqr_ar = get_rsquare(next_states[:,:,:state_dim], next_states_pred_ar[:,:,:state_dim])
 
     print("R^2 NAR:", rsqr_nar, "R^2 AR:", rsqr_ar)
 
+    rewards = rewards.cpu().detach().numpy()
+    rewards_pred_nar = rewards_pred_nar.cpu().detach().numpy()
+    reward_rsqr_nar = get_rsquare(rewards, rewards_pred_nar)
+    rewards_pred_ar = rewards_pred_ar.cpu().detach().numpy()
+    reward_rsqr_ar = get_rsquare(rewards, rewards_pred_ar)
+    print("Reward R^2 NAR:", reward_rsqr_nar, "Reward R^2 AR:", reward_rsqr_ar)
+
     for i in range(0, state_dim):
-        rsqr_nar = get_rsquare(next_states_pred_nar[0,:,i], next_states[0,:,i])
-        rsqr_ar = get_rsquare(next_states_pred_ar[0,:,i], next_states[0,:,i])
+        rsqr_nar = get_rsquare(next_states[0,:,i:i+1], next_states_pred_nar[0,:,i:i+1])
+        rsqr_ar = get_rsquare(next_states[0,:,i:i+1], next_states_pred_ar[0,:,i:i+1])
         print("state", i, "R^2 NAR:", rsqr_nar, "R^2 AR:", rsqr_ar)
+
+    plot_rewards(rewards, rewards_pred_nar, rewards_pred_ar)
 
     plot_states(next_states, next_states_pred_nar, next_states_pred_ar, 0)
 
     plot_states(next_states, next_states_pred_nar, next_states_pred_ar, 5)
 
     plot_states(next_states, next_states_pred_nar, next_states_pred_ar, 12)
+
+
 
 if __name__ == "__main__":
     main()

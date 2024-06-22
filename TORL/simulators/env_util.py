@@ -41,7 +41,6 @@ class Config:
     def refresh_name(self):
         self.name = f"{self.name}-{self.env_name}-{str(uuid.uuid4())[:8]}"
 
-
 def make_env(env_name: str, seed: int) -> gym.Env:
     env = gym.make(env_name)
     env.seed(seed)

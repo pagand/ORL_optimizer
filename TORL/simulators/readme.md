@@ -1,3 +1,20 @@
+usage:
+
+first change 
+
+chkpt_path_nar: /home/james/sfu/ORL_optimizer/TORL/config/halfcheetah_medium_v2_nar.pt
+chkpt_path_ar: /home/james/sfu/ORL_optimizer/TORL/config/halfcheetah_medium_v2_ar.pt
+
+in ./config/env_halfcheetah_medium_v2.yaml 
+
+to your local path that contains these .pt files
+
+then run
+
+python ./simulators/env_plot.py --config ./config/env_halfcheetah_medium_v2.yaml
+
+
+------------------------
 env.py
 
 contains models

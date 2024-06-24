@@ -29,15 +29,15 @@ class Config:
     group: str = "rebrac"
     name: str = "rebrac"
     # model params
-    actor_learning_rate: float = 1e-3
-    critic_learning_rate: float = 1e-3
+    actor_learning_rate: float = 0.001
+    critic_learning_rate: float = 0.001
     hidden_dim: int = 256
     actor_n_hiddens: int = 3
     critic_n_hiddens: int = 3
     gamma: float = 0.99
-    tau: float = 5e-3
-    actor_bc_coef: float = 1.0
-    critic_bc_coef: float = 1.0
+    tau: float = 0.005
+    actor_bc_coef: float = 0.001
+    critic_bc_coef: float = 0.01
     actor_ln: bool = False
     critic_ln: bool = True
     policy_noise: float = 0.2
@@ -47,7 +47,7 @@ class Config:
     # training params
     dataset_name: str = "halfcheetah-medium-v2"
     batch_size: int = 1024
-    num_epochs: int = 1000
+    num_epochs: int = 500
     num_updates_on_epoch: int = 1000
     normalize_reward: bool = False
     normalize_states: bool = False
@@ -58,7 +58,7 @@ class Config:
     train_seed: int = 0
     eval_seed: int = 42
 
-    def __post_init__(self):
+    def refresh_name(self):
         self.name = f"{self.name}-{self.dataset_name}-{str(uuid.uuid4())[:8]}"
 
 
@@ -122,6 +122,8 @@ def get_d4rl_dataset(
         reward_.append(reward)
         done_.append(done_bool)
 
+    #print("state", np.array(obs_), "action", np.array(action_), "next_state", np.array(next_obs_), "reward", np.array(reward_), "done", np.array(done_))
+
     return {
         "state": np.array(obs_),
         "action": np.array(action_),
@@ -167,6 +169,31 @@ def sample_batch_d4rl(
         "reward": torch.tensor(rewards, dtype=torch.float32).to(device),
         "done": torch.tensor(dones, dtype=torch.float32).to(device),
     }
+
+class Metrics:
+    accumulators: Dict[str, Tuple[float, int]]
+
+    def __init__(self, accumulators: Dict[str, Tuple[float, int]]):
+        self.accumulators = accumulators
+
+    @staticmethod
+    def create(metrics: Sequence[str]) -> "Metrics":
+        init_metrics = {key: (0.0, 0) for key in metrics}
+        return Metrics(accumulators=init_metrics)
+
+    def update(self, updates: Dict[str, Any]):
+        for key, value in updates.items():
+            acc, steps = self.accumulators[key]
+            self.accumulators[key] = (acc + value, steps + 1)
+
+    def compute(self) -> Dict[str, float]:
+        # cumulative_value / total_steps
+        return {k: (v[0] / v[1]) for k, v in self.accumulators.items()}
+    
+    def reset(self):
+        for key in self.accumulators:
+            self.accumulators[key] = (0.0, 0)
+
 
 def test():
     dataset_name = "halfcheetah-medium-v2"

@@ -18,32 +18,33 @@ def update_actor(
     actor_model.train()
     action = actor_model(batch["state"])
     bc_penalty = ((action - batch["action"]) ** 2).sum(-1)
+    bc_penalty = bc_penalty
     
     lmbda = 1
 
-    with torch.no_grad():
-        critic_model = critic.get_model()
-        q_values = critic_model(batch["state"], action)
-        q_values = q_values.detach()
-    '''
-    q_value_min = q_values.min(0).values.detach()
+    critic_model = critic.get_model()
+    q_values = critic_model(batch["state"], action)
+
+    q_value_min = q_values.min(0).values
     if normalize_q:
         lmbda = 1 / (torch.abs(q_value_min).mean())
-    '''
-    #print("beta", beta, "bc_penalty", bc_penalty, "lmbda", lmbda, "q_values", q_values)
-    actor.soft_update(tau)
-    critic.soft_update(tau)
+    lmbda = lmbda.detach()
 
-    loss = (beta * bc_penalty - lmbda * q_values).mean()
     actor.get_optimizer().zero_grad()
+    loss = (beta * bc_penalty - lmbda * q_values).mean()
     loss.backward()
     actor.get_optimizer().step()
 
-    
+    #print("beta", beta, "bc_penalty", bc_penalty, "lmbda", lmbda, "q_values", q_values)
+    with torch.no_grad():
+        actor.soft_update(tau)
+        critic.soft_update(tau)
+
     loss = loss.detach().cpu()
     metrics.update({"actor_loss": loss,
                     "bc_mse_policy": bc_penalty.mean().detach().cpu(),
-                    "action_mse": ((action - batch["action"]) ** 2).mean().detach().cpu()
+                    "action_mse": ((action - batch["action"]) ** 2).mean().detach().cpu(),
+                    "actor_bc_penalty_mean": bc_penalty.mean()
                     })
     #print("actor loss", loss, "bc_mse_policy", bc_penalty.mean().detach().cpu(), "action_mse", ((action - batch["action"]) ** 2).mean().detach().cpu())
     return loss
@@ -59,14 +60,19 @@ def update_critic(
     policy_noise: float = 0.2,
     noise_clip: float = 0.5,
 ):
-    with torch.inference_mode():
+    with torch.no_grad():
         next_action = actor.get_target_model()(batch["next_state"])
         #print("next_action", next_action)
+        '''
         noise = torch.randn_like(next_action) * policy_noise
         noise = noise.clamp(-noise_clip, noise_clip)
         next_action = (next_action + noise).clamp(-1, 1)
+        '''
         #print("next_action", next_action.shape, "batch[next_action]", batch["next_action"].shape)
-        bc_penalty = ((next_action - batch["next_action"]) ** 2).sum(-1)
+        #bc_penalty = ((next_action - batch["next_action"]) ** 2).sum(-1)
+        act_diff = next_action - batch["next_action"]
+        #c_penalty = torch.abs(act_diff).sum(1).mean()
+        bc_penalty = torch.square(act_diff).sum(-1)
         #print("bc_penalty", bc_penalty.shape)
         #print("critic target model", critic.get_target_model())
         next_q = critic.get_target_model()(batch["next_state"], next_action)
@@ -76,7 +82,7 @@ def update_critic(
         next_q = next_q - beta * bc_penalty
         #print("next_q - beta * bc_penalty", next_q)
         target_q = batch["reward"] + (1 - batch["done"]) * gamma * next_q
-        target_q = target_q.squeeze(0)
+        target_q = target_q.squeeze(0).detach()
         #print("target_q", target_q)
         #print("target_q", target_q)
     
@@ -94,7 +100,7 @@ def update_critic(
     critic.get_optimizer().step()
     loss = loss.detach().cpu()
     qmin = q_min.detach().cpu()
-    metrics.update({"critic_loss": loss, "qmin": qmin})
+    metrics.update({"critic_loss": loss, "qmin": qmin, "critic_bc_penalty_mean": bc_penalty.mean()})
     #print("critic loss", loss, "qmin", qmin)
     return loss, q_min
 

@@ -29,8 +29,8 @@ class Config:
     group: str = "rebrac"
     name: str = "rebrac"
     # model params
-    actor_learning_rate: float = 0.001
-    critic_learning_rate: float = 0.001
+    actor_learning_rate: float = 1e-3
+    critic_learning_rate: float = 1e-3
     hidden_dim: int = 256
     actor_n_hiddens: int = 3
     critic_n_hiddens: int = 3

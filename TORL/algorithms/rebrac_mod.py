@@ -8,17 +8,15 @@ from copy import deepcopy
 def pytorch_init(tensor, fan_in):
     bound = math.sqrt(1 / fan_in)
     with torch.no_grad():
-        return tensor.uniform_(-bound, bound)
-        #return tensor.fill_(0.1)
-    
+        tensor.uniform_(-bound, bound)
+       
 def uniform_init(tensor, bound):
     with torch.no_grad():
-        return tensor.uniform_(-bound, bound)
-        #return tensor.fill_(0.1)
+        tensor.uniform_(-bound, bound)
     
 def constant_init(tensor, value):
     with torch.no_grad():
-        return tensor.fill_(value)
+        tensor.fill_(value)
     
 # Jax equivalent of LayerNorm    
 class JLayerNorm(nn.Module):
@@ -119,10 +117,10 @@ class EnsembleCritic(nn.Module):
         return q_values
     
 class TrainState:
-    def __init__(self, model, optimizer):
+    def __init__(self, model, target_model, optimizer):
         self.model = model
         self.optimizer = optimizer
-        self.target_model = deepcopy(model)
+        self.target_model = target_model
 
     def get_model(self):
         return self.model

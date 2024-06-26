@@ -1,7 +1,4 @@
-TORL/test/
-TORL/simulators/__pycache__/
-TORL/algorithms/__pycache__/
-VesselModel/__pycache__/
+TORL/tmp/
 
 .idea/
 Material/
@@ -25,3 +22,4 @@ RL/.DS_Store
 
 
 *wandb*
+*__pycache__*

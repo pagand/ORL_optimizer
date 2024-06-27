@@ -46,7 +46,7 @@ class DetActor(nn.Module):
         layers.append(ll)
         layers.append(nn.ReLU())
         if layernorm:
-            layers.append(JLayerNorm(hidden_dim))
+            layers.append(nn.LayerNorm(hidden_dim, eps=1e-6))
         for _ in range(n_hiddens - 1):
             ll = nn.Linear(hidden_dim, hidden_dim)
             pytorch_init(ll.weight, hidden_dim)
@@ -54,7 +54,7 @@ class DetActor(nn.Module):
             layers.append(ll)
             layers.append(nn.ReLU())
             if layernorm:
-                layers.append(JLayerNorm(hidden_dim))
+                layers.append(nn.LayerNorm(hidden_dim, eps=1e-6))
         ll = nn.Linear(hidden_dim, action_dim)
         uniform_init(ll.weight, 1e-3)
         uniform_init(ll.bias, 1e-3)
@@ -78,7 +78,7 @@ class Critic(nn.Module):
         layers.append(ll)
         layers.append(nn.ReLU())
         if layernorm:
-            layers.append(JLayerNorm(hidden_dim))
+            layers.append(nn.LayerNorm(hidden_dim, eps=1e-6))
         
         # Hidden layers
         for _ in range(n_hiddens - 1):
@@ -88,7 +88,7 @@ class Critic(nn.Module):
             layers.append(ll)
             layers.append(nn.ReLU())
             if layernorm:
-                layers.append(JLayerNorm(hidden_dim))
+                layers.append(nn.LayerNorm(hidden_dim, eps=1e-6))
         
         # Output layer
         ll = nn.Linear(hidden_dim, 1)
@@ -117,10 +117,10 @@ class EnsembleCritic(nn.Module):
         return q_values
     
 class TrainState:
-    def __init__(self, model, target_model, optimizer):
+    def __init__(self, model, optimizer):
         self.model = model
         self.optimizer = optimizer
-        self.target_model = target_model
+        self.target_model = deepcopy(model)
 
     def get_model(self):
         return self.model

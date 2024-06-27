@@ -63,55 +63,35 @@ def main(config: Config):
     eval_env = make_env(config.dataset_name, config.eval_seed)
     state_dim, action_dim = get_env_info(env)
     dataset = get_d4rl_dataset(env)
-    torch.manual_seed(2)
     actor = DetActor(state_dim=state_dim, action_dim=action_dim, 
                      hidden_dim=config.hidden_dim, layernorm=config.actor_ln, 
                      n_hiddens=config.actor_n_hiddens)
-    actor_params = actor.state_dict()
-    torch.manual_seed(2)
-    actor_target = DetActor(state_dim=state_dim, action_dim=action_dim, 
-                     hidden_dim=config.hidden_dim, layernorm=config.actor_ln, 
-                     n_hiddens=config.actor_n_hiddens)
-    actor_target.load_state_dict(actor_params)
     actor_optim = torch.optim.Adam(actor.parameters(), lr=config.actor_learning_rate,
                                    betas=(0.9, 0.999), eps=1e-8)
-    actor_state = TrainState(actor, actor_target, actor_optim)
-
-    torch.manual_seed(41)
+    actor_state = TrainState(actor, actor_optim)
     critic = EnsembleCritic(state_dim=state_dim, action_dim=action_dim, 
                             hidden_dim=config.hidden_dim, num_critics=2,
                             layernorm=config.critic_ln, n_hiddens=config.critic_n_hiddens)
-    critic_params = critic.state_dict()
-    torch.manual_seed(41)
-    critic_target = EnsembleCritic(state_dim=state_dim, action_dim=action_dim,
-                            hidden_dim=config.hidden_dim, num_critics=2,
-                            layernorm=config.critic_ln, n_hiddens=config.critic_n_hiddens)
-    critic_target.load_state_dict(critic_params)
     critic_optim = torch.optim.Adam(critic.parameters(), lr=config.critic_learning_rate,
                                     betas=(0.9, 0.999), eps=1e-8)
-    critic_state = TrainState(critic, critic_target, critic_optim)
-
+    critic_state = TrainState(critic, critic_optim)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     actor_state.to(device)
     critic_state.to(device)
 
-    metrics = Metrics.create(["critic_loss", "qmin", "actor_loss", "bc_mse_policy", "action_mse",
-                              "critic_bc_penalty_mean", "actor_bc_penalty_mean"])
+    metrics = Metrics.create(["critic_loss", "qmin", "actor_loss", "bc_mse_policy", "action_mse"])
 
     t = trange(config.num_epochs, desc="Training")
     for epoch in t:
         for i in range(config.num_updates_on_epoch):
             batch = sample_batch_d4rl(dataset, config.batch_size, randomize=False, device=device)
-            if i % config.policy_freq == 0:
-                update_critic(actor_state, critic_state, batch, metrics,
+            update_critic(actor_state, critic_state, batch, metrics,
                             config.gamma, config.critic_bc_coef, config.tau, 
-                            config.policy_noise, config.noise_clip)
+                            config.policy_noise, config.noise_clip)            
+            if i % config.policy_freq == 0:
                 update_actor(actor_state, critic_state, batch, metrics,
                              config.normalize_q, config.actor_bc_coef, config.tau)
-            else:
-                update_critic(actor_state, critic_state, batch, metrics,
-                            config.gamma, config.critic_bc_coef, config.tau, 
-                            config.policy_noise, config.noise_clip)
+
         mean_metrics = metrics.compute()
         logs = {k: v for k, v in mean_metrics.items()}
         wandb.log(logs)

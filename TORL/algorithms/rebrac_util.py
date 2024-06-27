@@ -47,13 +47,13 @@ class Config:
     # training params
     dataset_name: str = "halfcheetah-medium-v2"
     batch_size: int = 1024
-    num_epochs: int = 500
+    num_epochs: int = 1000
     num_updates_on_epoch: int = 1000
     normalize_reward: bool = False
     normalize_states: bool = False
     # evaluation params
-    eval_episodes: int = 10
-    eval_every: int = 50
+    eval_episodes: int = 50
+    eval_every: int = 10
     # general params
     train_seed: int = 0
     eval_seed: int = 42

@@ -14,7 +14,7 @@ import uuid
 from tqdm.auto import trange
 
 from env_util_offline import Config, qlearning_dataset, get_env_info, sample_batch_offline
-from env import Dynamics
+from env_mod import Dynamics
 from torch import nn
 
 class MeanFourthPowerError(nn.Module):
@@ -45,10 +45,10 @@ def main(config: Config):
     env = gym.make(config.dataset_name)
     dataset = qlearning_dataset(env)
     state_dim, action_dim = get_env_info(env)
-
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     dynamics_nn = Dynamics(state_dim=state_dim, action_dim=action_dim, hidden_dim=config.hidden_dim,
                             sequence_num=config.sequence_num, out_state_num=config.out_state_num,
-                            future_num=config.future_num)
+                            future_num=config.future_num, device=device)
     if config.is_ar:
         chkpt_path = config.chkpt_path_ar
     else:
@@ -63,7 +63,7 @@ def main(config: Config):
     criterion = torch.nn.MSELoss()
     #criterion = MeanFourthPowerError()
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
     dynamics_nn.to(device)
 
     dynamics_losses = np.array([])

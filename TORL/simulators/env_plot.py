@@ -13,7 +13,7 @@ import uuid
 from tqdm.auto import trange
 
 from env_util_offline import Config, qlearning_dataset, get_env_info, sample_batch_offline, get_rsquare
-from env import Dynamics
+from env_mod import Dynamics
 
 
 from mpl_interactions import ioff, panhandler, zoom_factory

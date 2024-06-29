@@ -15,9 +15,9 @@ python ./simulators/env_plot.py --config ./config/env_halfcheetah_medium_v2.yaml
 
 
 ------------------------
-env.py
+env_mod.py
 
-contains models
+contains models and MyEnv
 
 env_util.py
 

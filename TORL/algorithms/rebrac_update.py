@@ -27,9 +27,10 @@ def update_actor(
         q_value_min = q_values.min(0).values
         if normalize_q:
             lmbda = 1 / (torch.abs(q_value_min).mean())
+    
+    loss = (beta * bc_penalty - lmbda * q_values).mean()
 
     actor.get_optimizer().zero_grad()
-    loss = (beta * bc_penalty - lmbda * q_values).mean()
     loss.backward()
     actor.get_optimizer().step()
 

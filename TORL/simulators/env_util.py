@@ -13,7 +13,7 @@ import pyrallis
 from torch import Tensor
 from tqdm.auto import trange
 
-from env import Env, Dynamics, Reward, Dones, ObsType, ActType
+from env_mod import Env, Dynamics, Reward, Dones, ObsType, ActType
 
 @dataclass
 class Config:

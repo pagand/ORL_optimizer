@@ -59,6 +59,7 @@ class Config:
     eval_seed: int = 42
     #myenv params
     chkpt_path: str = "config/halfcheetah_medium_v2_ar.pt"
+    use_gym_env: bool = False
 
     def refresh_name(self):
         self.name = f"{self.name}-{self.dataset_name}-{str(uuid.uuid4())[:8]}"

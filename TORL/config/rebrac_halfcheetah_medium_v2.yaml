@@ -27,3 +27,4 @@ project: TORL
 tau: 0.05
 train_seed: 0
 chkpt_path: config/halfcheetah_medium_v2_ar.pt
+use_gym_env: false

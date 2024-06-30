@@ -134,14 +134,17 @@ def main(config: Config):
         wandb.log(logs)
         metrics.reset()
         if epoch % config.eval_every == 0 or epoch == config.num_epochs - 1:
-            eval_returns, init_obs = evaluate(
-                eval_env,
-                actor_state.get_model(),
-                config.eval_episodes,
-                seed=config.eval_seed,
-                device=device
-            )
-            normalized_score = eval_env.get_normalized_score(eval_returns) * 100.0
+            if config.use_gym_env:
+                eval_returns, init_obs = evaluate(
+                    eval_env,
+                    actor_state.get_model(),
+                    config.eval_episodes,
+                    seed=config.eval_seed,
+                    device=device
+                )
+                normalized_score = eval_env.get_normalized_score(eval_returns) * 100.0
+            else:
+                init_obs = np.random.uniform(-1, 1, (config.eval_episodes, state_dim))            
             sim_returns = evaluate_simulator(
                 myenv,
                 actor_state.get_model(),
@@ -149,23 +152,35 @@ def main(config: Config):
                 init_obs,
                 device
             )
-            wandb.log(
+            if config.use_gym_env:
+                wandb.log(
+                    {
+                        "epoch": epoch,
+                        "eval/return_mean": np.mean(eval_returns),
+                        "eval/return_std": np.std(eval_returns),
+                        "eval/normalized_score_mean": np.mean(normalized_score),
+                        "eval/normalized_score_std": np.std(normalized_score),
+                        "eval/sim_return_mean": np.mean(sim_returns),
+                        "eval/sim_return_std": np.std(sim_returns),
+                    }
+                )
+                t.set_postfix(
                 {
-                    "epoch": epoch,
-                    "eval/return_mean": np.mean(eval_returns),
-                    "eval/return_std": np.std(eval_returns),
-                    "eval/normalized_score_mean": np.mean(normalized_score),
-                    "eval/normalized_score_std": np.std(normalized_score),
-                    "eval/sim_return_mean": np.mean(sim_returns),
-                    "eval/sim_return_std": np.std(sim_returns),
-                }
-            )
-        t.set_postfix(
-            {
-                "RM": np.mean(eval_returns),
-                "SM": np.mean(sim_returns),
-            }
-        )
+                    "RM": np.mean(eval_returns),
+                    "SM": np.mean(sim_returns),
+                })
+            else:
+                wandb.log(
+                    {
+                        "epoch": epoch,
+                        "eval/sim_return_mean": np.mean(sim_returns),
+                        "eval/sim_return_std": np.std(sim_returns),
+                    }
+                )
+                t.set_postfix(
+                {
+                    "SM": np.mean(sim_returns),
+                })
                 
 if __name__ == "__main__":
     main()

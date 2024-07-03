@@ -39,7 +39,7 @@ def evaluate(
 
     returns = []
     init_obs = []
-    for _ in trange(num_episodes, desc="Eval", leave=False):
+    for _ in trange(num_episodes, desc="Eval Gym", leave=False):
         obs, done = env.reset(), False
         init_obs.append(obs)
         total_reward = 0.0
@@ -152,16 +152,19 @@ def main(config: Config):
                 init_obs,
                 device
             )
+            sim_normalized_score = eval_env.get_normalized_score(sim_returns) * 100.0
             if config.use_gym_env:
                 wandb.log(
                     {
                         "epoch": epoch,
-                        "eval/return_mean": np.mean(eval_returns),
-                        "eval/return_std": np.std(eval_returns),
-                        "eval/normalized_score_mean": np.mean(normalized_score),
-                        "eval/normalized_score_std": np.std(normalized_score),
+                        "eval/gym_return_mean": np.mean(eval_returns),
+                        "eval/gym_return_std": np.std(eval_returns),
+                        "eval/gym_normalized_score_mean": np.mean(normalized_score),
+                        "eval/gym_normalized_score_std": np.std(normalized_score),
                         "eval/sim_return_mean": np.mean(sim_returns),
                         "eval/sim_return_std": np.std(sim_returns),
+                        "eval/sim_normalized_score_mean": np.mean(sim_normalized_score),
+                        "eval/sim_normalized_score_std": np.std(sim_normalized_score),
                     }
                 )
                 t.set_postfix(
@@ -175,6 +178,8 @@ def main(config: Config):
                         "epoch": epoch,
                         "eval/sim_return_mean": np.mean(sim_returns),
                         "eval/sim_return_std": np.std(sim_returns),
+                        "eval/sim_normalized_score_mean": np.mean(sim_normalized_score),
+                        "eval/sim_normalized_score_std": np.std(sim_normalized_score),
                     }
                 )
                 t.set_postfix(

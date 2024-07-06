@@ -62,10 +62,10 @@ def main(config: Config):
     env = gym.make(config.dataset_name)
     dataset = qlearning_dataset(env)
     state_dim, action_dim = get_env_info(env)
-
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     dynamics_nn = Dynamics(state_dim=state_dim, action_dim=action_dim, hidden_dim=config.hidden_dim,
                             sequence_num=config.sequence_num, out_state_num=config.out_state_num,
-                            future_num=config.future_num)
+                            future_num=config.future_num, device=device)
     if os.path.exists(config.chkpt_path_nar):
         checkpoint = torch.load(config.chkpt_path_nar)
         dynamics_nn.load_state_dict(checkpoint["dynamics_nn"])
@@ -75,7 +75,6 @@ def main(config: Config):
         print("No checkpoint found at", config.chkpt_path_nar)
         return
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     dynamics_nn.to(device)
  
     states, actions, next_states, rewards = sample_batch_offline(
@@ -88,12 +87,12 @@ def main(config: Config):
     with torch.inference_mode():
         next_states_pred_nar, rewards_pred_nar = dynamics_nn(states, actions, is_eval=True, is_ar=False)
 
+
     next_states_pred_nar = next_states_pred_nar.cpu().detach().numpy()
     rsqr_nar = get_rsquare(next_states[:,:,:state_dim], next_states_pred_nar[:,:,:state_dim])
-
     dynamics_nn = Dynamics(state_dim=state_dim, action_dim=action_dim, hidden_dim=config.hidden_dim,
                             sequence_num=config.sequence_num, out_state_num=config.out_state_num,
-                            future_num=config.future_num)
+                            future_num=config.future_num, device=device)
     if os.path.exists(config.chkpt_path_ar):
         checkpoint = torch.load(config.chkpt_path_ar)
         dynamics_nn.load_state_dict(checkpoint["dynamics_nn"])

@@ -9,7 +9,7 @@ save_chkpt_per: 500
 sequence_num: 3
 out_state_num: 1
 hidden_dim: 128
-future_num: 1
+future_num: 980
 num_epochs: 100000
 eval_episodes: 100
 batch_size: 990

@@ -51,7 +51,9 @@ class Dynamics(nn.Module):
     def forward(self, state, action, is_eval=False, is_ar=False):
         s_ = torch.empty((state.shape[0], 0, self.state_dim*self.out_state_num)).to(self.device)
         r_ = torch.empty((state.shape[0], 0, self.out_state_num)).to(self.device)
-        state_= state[:,:self.sequence_num,:]
+        state_= state[:,:self.sequence_num,:].to(self.device)
+        state = state.to(self.device)
+        action = action.to(self.device)
         for i in range(self.future_num):
             #print("action shape", action.shape, "state_ shape", state_.shape)
             #print("i", i, "action[] shape", action[:, i:i+self.sequence_num, :].shape)

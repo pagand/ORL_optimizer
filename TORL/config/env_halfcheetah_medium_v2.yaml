@@ -2,8 +2,8 @@ project: ORL_optimizer
 group: env
 name: env_train_offline
 dataset_name: halfcheetah-medium-v2
-chkpt_path_nar: config/halfcheetah_medium_v2_nar.pt
-chkpt_path_ar: config/halfcheetah_medium_v2_ar.pt
+chkpt_path_nar: TORL/config/halfcheetah_medium_v2_nar.pt
+chkpt_path_ar: TORL/config/halfcheetah_medium_v2_ar.pt
 load_chkpt: false
 save_chkpt_per: 500
 sequence_num: 3

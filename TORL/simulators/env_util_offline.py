@@ -12,11 +12,11 @@ import time
 @dataclass
 class Config:
     project: str = "ORL_optimizer"
-    group: str = "env"
+    group: str = "marslab"
     name: str = "env_train_offline"
     dataset_name: str = "halfcheetah-medium-v2"
-    chkpt_path_nar: str = "/home/james/sfu/ORL_optimizer/OtherModels/chkpt/halfcheetah_medium_v2_nar.pt"
-    chkpt_path_ar: str = "/home/james/sfu/ORL_optimizer/OtherModels/chkpt/halfcheetah_medium_v2_ar.pt"
+    chkpt_path_nar: str = "TORL/config/halfcheetah_medium_v2_nar.pt"
+    chkpt_path_ar: str = "TORL/config/halfcheetah_medium_v2_ar.pt"
     load_chkpt: bool = True
     save_chkpt_per: int = 1000
     sequence_num: int = 5

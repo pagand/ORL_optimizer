@@ -21,10 +21,20 @@ import gym
 import sys
 import os
 
+from sklearn.metrics import r2_score
+
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 
 from simulators import env_mod
+
+def get_rsquare(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    y_true = y_true.flatten()
+    y_pred = y_pred.flatten()
+    y_mean = np.mean(y_true)
+    ss_tot = np.sum((y_true-y_mean)**2)
+    ss_res = np.sum((y_true-y_pred)**2)
+    return 1 - ss_res/ss_tot
 
 def evaluate(
     env: gym.Env,
@@ -85,6 +95,7 @@ def main(config: Config):
     dict_config = asdict(config)
 
     np.random.seed(config.train_seed)
+    torch.manual_seed(config.train_seed)
     wandb.init(
         config=dict_config,
         project=config.project,
@@ -119,6 +130,8 @@ def main(config: Config):
     metrics = Metrics.create(["critic_loss", "qmin", "actor_loss", "bc_mse_policy", "action_mse"])
 
     t = trange(config.num_epochs, desc="Training")
+    sim_rewards = []
+    gym_rewards = []
     for epoch in t:
         for i in range(config.num_updates_on_epoch):
             batch = sample_batch_d4rl(dataset, config.batch_size, randomize=False, device=device)
@@ -154,6 +167,11 @@ def main(config: Config):
             )
             sim_normalized_score = eval_env.get_normalized_score(sim_returns) * 100.0
             if config.use_gym_env:
+                sim_rewards.append(np.mean(sim_returns))
+                gym_rewards.append(np.mean(eval_returns))      
+                rsqr = 0.0
+                if len(sim_rewards) > 1:
+                    rsqr = r2_score(sim_rewards, gym_rewards)            
                 wandb.log(
                     {
                         "epoch": epoch,
@@ -165,8 +183,9 @@ def main(config: Config):
                         "eval/sim_return_std": np.std(sim_returns),
                         "eval/sim_normalized_score_mean": np.mean(sim_normalized_score),
                         "eval/sim_normalized_score_std": np.std(sim_normalized_score),
+                        "eval/sim_gym_rsqr": rsqr,
                     }
-                )
+                )              
                 t.set_postfix(
                 {
                     "RM": np.mean(eval_returns),
@@ -186,7 +205,8 @@ def main(config: Config):
                 {
                     "SM": np.mean(sim_returns),
                 })
-                
+  
+
 if __name__ == "__main__":
     main()
 

@@ -13,7 +13,7 @@ import pyrallis
 import uuid
 from tqdm.auto import trange
 
-from env_util_offline import Config, qlearning_dataset, get_env_info, sample_batch_offline
+from env_util_offline import Config, qlearning_dataset, get_env_info, sample_batch_offline, qlearning_dataset2
 from env_mod import Dynamics
 from torch import nn
 
@@ -33,6 +33,7 @@ def main(config: Config):
     dict_config = asdict(config)
     dict_config["mlc_job_name"] = os.environ.get("PLATFORM_JOB_NAME")
     np.random.seed(config.train_seed)
+    torch.manual_seed(config.train_seed)
     wandb.init(
         config=dict_config,
         project=config.project,
@@ -42,8 +43,10 @@ def main(config: Config):
     )
 
     wandb.mark_preempting()
-    env = gym.make(config.dataset_name)
-    dataset = qlearning_dataset(env)
+    # comma separated list of datasets
+    dsnames = config.dataset_name.split(",")
+    env = gym.make(dsnames[0])
+    dataset = qlearning_dataset2(dsnames)
     state_dim, action_dim = get_env_info(env)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     dynamics_nn = Dynamics(state_dim=state_dim, action_dim=action_dim, hidden_dim=config.hidden_dim,
@@ -68,30 +71,37 @@ def main(config: Config):
 
     dynamics_losses = np.array([])
     hold_out_losses = np.array([])
- 
+
+    train_gamma = 0.98
+    # generate a geometric sequence of gammas
+    state_gammas = Tensor([[train_gamma**j for i in range(state_dim)] for j in range(config.future_num)]).to(device)
+    reward_gammas = Tensor([train_gamma**i for i in range(config.future_num)]).unsqueeze(1).to(device)
+    hold_out_losses = np.array([])
+    hold_out_loss = np.array([])
     t = trange(config.num_epochs, desc="Training")
     for epoch in t:
-        states, actions, next_states, rewards = sample_batch_offline(
+        states, actions, next_states, next_rewards = sample_batch_offline(
             dataset, config.batch_size, config.sequence_num, config.future_num, config.out_state_num, is_eval=False,
             is_holdout=False, randomize=config.train_randomize)
-        rewards = rewards.to(device)
         states = states.to(device)
         actions = actions.to(device)
         next_states = next_states.to(device)
+        next_rewards = next_rewards.to(device)
         dynamics_nn.train()
-        next_states_pred, rewards_pred = dynamics_nn(states, actions, is_eval=False, is_ar=config.is_ar)
+        next_states_pred, rewards_pred, loss = dynamics_nn(states, actions, next_state=next_states, 
+                                                           next_reward=next_rewards, is_eval=False, is_ar=config.is_ar)
         #print("rewards_pred", rewards_pred.shape, "rewards", rewards.shape)
         #print("next_states_pred", next_states_pred.shape, "next_states", next_states.shape)
-        loss = criterion(next_states_pred, next_states) + criterion(rewards_pred, rewards)
+        #loss = criterion(next_states_pred, next_states) + criterion(rewards_pred, rewards)
         dynamics_optimizer.zero_grad()
         loss.backward()
         dynamics_optimizer.step()
         loss_ = loss.cpu().detach().numpy()
         dynamics_losses = np.append(dynamics_losses, loss_)
-        if config.holdout_per>0 and len(hold_out_losses)>0:
-            t.set_description(f"DL:{loss_:.6f} DLM:{np.mean(dynamics_losses):.6f} HLM:{np.mean(hold_out_losses[:]):.6f}")
+        if config.holdout_per>0 and len(hold_out_loss)>0:
+            t.set_description(f"DL:{loss_:.2f} DLM:{np.mean(dynamics_losses):.2f} HLM:{np.mean(hold_out_loss[:]):.2f}")
         else:
-            t.set_description(f"DL:{loss_:.6f} DLM:{np.mean(dynamics_losses):.6f})")
+            t.set_description(f"DL:{loss_:.2f} DLM:{np.mean(dynamics_losses):.2f})")
 
         wandb.log({"dynamics_loss": loss.item(),
                      "dynamics_loss_mean": np.mean(dynamics_losses),
@@ -105,22 +115,27 @@ def main(config: Config):
             }, chkpt_path)
 
         #evaluate holdout data
+
         if config.holdout_per>0 and (epoch % config.holdout_per == 0 or epoch == config.num_epochs-1):
+            hold_out_loss = np.array([])
             for j in range(config.holdout_num):
-                states, actions, next_states, rewards = sample_batch_offline(
+                states, actions, next_states, next_rewards = sample_batch_offline(
                     dataset, config.holdout_num, config.sequence_num, config.future_num, config.out_state_num, is_eval=True,
                     is_holdout=True, randomize=config.holdout_randomize)
-                rewards = rewards.to(device)
                 states = states.to(device)
                 actions = actions.to(device)
                 next_states = next_states.to(device)
+                next_rewards = next_rewards.to(device)
                 dynamics_nn.eval()
                 with torch.inference_mode():
-                    next_states_pred, rewards_pred = dynamics_nn(states, actions, is_eval=True, is_ar=config.is_ar)
-                loss = criterion(next_states_pred, next_states)
+                    next_states_pred, rewards_pred, loss = dynamics_nn(states, actions,  
+                                                                       next_state=next_states, next_reward=next_rewards, 
+                                                                       is_eval=True, is_ar=config.is_ar)
+                #loss = criterion(next_states_pred, next_states)
                 loss = loss.cpu().detach().numpy()
-                hold_out_losses = np.append(hold_out_losses, loss)                
-                wandb.log({"holdout_loss": loss, 
+                hold_out_loss = np.append(hold_out_loss, loss)                
+                hold_out_losses = np.append(hold_out_losses, loss)
+                wandb.log({"holdout_loss": np.mean(hold_out_loss), 
                             "holdout_loss_mean": np.mean(hold_out_losses),
                             "holdout_loss_std": np.std(hold_out_losses)
                 })

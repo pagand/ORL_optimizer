@@ -23,6 +23,7 @@ def main(config: Config):
     dict_config = asdict(config)
     dict_config["mlc_job_name"] = os.environ.get("PLATFORM_JOB_NAME")
     np.random.seed(config.eval_seed)
+    torch.manual_seed(config.eval_seed)
     wandb.init(
         config=dict_config,
         project=config.project,

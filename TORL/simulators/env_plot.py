@@ -12,7 +12,7 @@ import pyrallis
 import uuid
 from tqdm.auto import trange
 
-from env_util_offline import Config, qlearning_dataset, get_env_info, sample_batch_offline, get_rsquare
+from env_util_offline import Config, qlearning_dataset2, get_env_info, sample_batch_offline, get_rsquare
 from env_mod import Dynamics
 
 
@@ -59,8 +59,10 @@ def plot_rewards(rewards, rewards_nar, rewards_ar):
 @pyrallis.wrap()
 def main(config: Config):
     np.random.seed(config.eval_seed)
-    env = gym.make(config.dataset_name)
-    dataset = qlearning_dataset(env)
+    torch.manual_seed(config.eval_seed)
+    dsnames = config.dataset_name.split(",")
+    env = gym.make(dsnames[0])
+    dataset = qlearning_dataset2(dsnames)
     state_dim, action_dim = get_env_info(env)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     dynamics_nn = Dynamics(state_dim=state_dim, action_dim=action_dim, hidden_dim=config.hidden_dim,

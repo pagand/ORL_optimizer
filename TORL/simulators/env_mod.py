@@ -28,18 +28,25 @@ class Dynamics(nn.Module):
     device: torch.device
     dynamics_nn: nn.Module
 
-    def __init__(self, state_dim: int, action_dim: int, hidden_dim: int, sequence_num: int, out_state_num: int, future_num: int,
-                 use_future_act: bool = False, device: torch.device = 'cpu'):
+    def __init__(self, state_dim: int, action_dim: int, hidden_dim: int, sequence_num: int, 
+                 out_state_num: int, future_num: int, use_future_act: bool = False, 
+                 device: torch.device = 'cuda', train_gamma = 0.99):
         super().__init__()
-        self.state_action_dim = state_dim + action_dim
-        if use_future_act:
-            if self.state_action_dim % 2 == 1:
-                self.state_action_dim += 1            
-        self.lstm = nn.LSTM(input_size=self.state_action_dim, hidden_size=hidden_dim, num_layers=sequence_num+out_state_num-1, 
+        self.input_dim = state_dim + action_dim
+        self.lstm = nn.LSTM(input_size=self.input_dim, hidden_size=hidden_dim, num_layers=sequence_num+out_state_num-1, 
                             batch_first=True)
         #self.dropout = nn.Dropout(0.1)
-        self.linear = nn.Linear(hidden_dim, state_dim*out_state_num)
-        self.linear2 = nn.Linear(hidden_dim, out_state_num)
+
+        self.mlp_state = nn.Sequential( nn.ReLU(),
+                                  nn.Linear(hidden_dim, hidden_dim),
+                                  nn.Dropout(0.2),
+                                  nn.ReLU(),
+                                  nn.Linear(hidden_dim, state_dim*out_state_num))        
+        self.mlp_reward = nn.Sequential( nn.ReLU(),
+                                    nn.Linear(hidden_dim, hidden_dim),
+                                    nn.Dropout(0.2),
+                                    nn.ReLU(),
+                                    nn.Linear(hidden_dim, out_state_num))
         self.future_num = future_num
         self.state_dim = state_dim
         self.action_dim = action_dim
@@ -47,8 +54,10 @@ class Dynamics(nn.Module):
         self.out_state_num = out_state_num
         self.use_future_act = use_future_act
         self.device = device
-
-    def forward(self, state, action, is_eval=False, is_ar=False):
+        self.state_gammas = Tensor([[train_gamma**j for i in range(state_dim)] for j in range(future_num)]).to(device)
+        self.reward_gammas = Tensor([train_gamma**i for i in range(future_num)]).unsqueeze(1).to(device)
+ 
+    def forward(self, state, action, next_state=None, next_reward=None, is_eval=False, is_ar=False):
         s_ = torch.empty((state.shape[0], 0, self.state_dim*self.out_state_num)).to(self.device)
         r_ = torch.empty((state.shape[0], 0, self.out_state_num)).to(self.device)
         state_= state[:,:self.sequence_num,:]
@@ -56,29 +65,23 @@ class Dynamics(nn.Module):
             #print("action shape", action.shape, "state_ shape", state_.shape)
             #print("i", i, "action[] shape", action[:, i:i+self.sequence_num, :].shape)
             x = torch.cat((action[:,i:i+self.sequence_num,:], state_), dim=-1)
-            if self.state_action_dim > self.state_dim + self.action_dim:
-                x = pad(x, (0,1))
-            if self.out_state_num > 1 and self.use_future_act:
-                if is_eval:
-                    future_act = torch.stack([action[:,i+self.sequence_num-1,:] for _ in range(self.out_state_num-1)], dim=1)
-                else:
-                    future_act = action[:,i+self.sequence_num:i+self.sequence_num+self.out_state_num-1,:]
-                future_act = pad(future_act, (0, self.state_action_dim-self.action_dim))
-                x = torch.cat((x, future_act), dim=1)
             x, _ = self.lstm(x)
             x = x[:,-1,:]
-            #if not is_eval:
-            #    x = self.dropout(x)
-            s = self.linear(x)
-            s = s.unsqueeze(1)
-            r = self.linear2(x)
-            r = r.unsqueeze(1)
+            s = self.mlp_state(x).unsqueeze(1)
+            r = self.mlp_reward(x).unsqueeze(1)
             s_ = torch.cat((s_, s), dim=1)
             r_ = torch.cat((r_, r), dim=1)
             if is_ar:
                 state_ = torch.cat((state_[:,1:,:], s[:,:,:self.state_dim]), dim=1)
             else:
                 state_ = state[:,i+1:i+self.sequence_num+1,:]
+
+        if next_state is not None and next_reward is not None:
+            next_state_diff = (((s_ - next_state) * self.state_gammas) ** 2).flatten(1,-1).sum(-1).mean()
+            reward_diff = (((r_ - next_reward) * self.reward_gammas) ** 2).flatten(1,-1).sum(-1).mean()
+            loss = next_state_diff + reward_diff
+            return (s_, r_, loss)
+        
         return (s_, r_)
 
 class MyEnv:

@@ -41,7 +41,8 @@ def evaluate(
     actor: nn.Module,
     num_episodes: int,
     seed: int,
-    device: torch.device
+    device: torch.device,
+    step_limit: int = 1e8  
 ):
     env.seed(seed)
     env.action_space.seed(seed)
@@ -53,12 +54,14 @@ def evaluate(
         obs, done = env.reset(), False
         init_obs.append(obs)
         total_reward = 0.0
-        while not done:
+        step = 0
+        while (not done) and step < step_limit:
             obs = torch.tensor(obs, dtype=torch.float32).to(device)
             with torch.no_grad():
                 action = actor(obs).detach().cpu().numpy()
             obs, reward, done, _ = env.step(action)
             total_reward += reward
+            step+=1
         returns.append(total_reward)
     init_obs = np.array(init_obs)
     return np.array(returns), init_obs
@@ -68,7 +71,8 @@ def evaluate_simulator(
     actor: nn.Module,
     num_episodes: int,
     init_obs: np.ndarray,
-    device: torch.device
+    device: torch.device,
+    step_limit: int = 1e8
 ):
     returns = []
     for i in trange(num_episodes, desc="Eval Simulator", leave=False):
@@ -77,12 +81,14 @@ def evaluate_simulator(
         env.reset(obs)
         done = False
         total_reward = 0.0
-        while not done:
+        step = 0
+        while (not done) and step < step_limit:
             obs = obs.to(device)
             with torch.no_grad():
                 action = actor(obs).detach()
             obs, reward, done = env.step(action)
             total_reward += float(reward)
+            step+=1
             #print("reward", reward, "total_reward", total_reward)
         returns.append(total_reward)
     return np.array(returns)
@@ -153,7 +159,7 @@ def main(config: Config):
                     actor_state.get_model(),
                     config.eval_episodes,
                     seed=config.eval_seed,
-                    device=device
+                    device=device,
                 )
                 normalized_score = eval_env.get_normalized_score(eval_returns) * 100.0
             else:
@@ -163,7 +169,7 @@ def main(config: Config):
                 actor_state.get_model(),
                 config.eval_episodes,
                 init_obs,
-                device
+                device,
             )
             sim_normalized_score = eval_env.get_normalized_score(sim_returns) * 100.0
             if config.use_gym_env:

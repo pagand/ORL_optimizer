@@ -66,7 +66,7 @@ class Config:
 
 
 def make_env(env_name: str, seed: int) -> gym.Env:
-    env = gym.make(env_name, terminate_when_unhealthy=False)
+    env = gym.make(env_name)
     env.seed(seed)
     env.action_space.seed(seed)
     env.observation_space.seed(seed)

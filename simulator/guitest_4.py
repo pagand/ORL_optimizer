@@ -11,7 +11,7 @@ from PyQt5 import QtGui
 from PyQt5 import QtCore
 from PyQt5.QtCore import pyqtSignal, QPoint, Qt
 from PyQt5.QtWebEngineWidgets import QWebEngineView
-from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QMainWindow, QGridLayout, QFrame
+from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QMainWindow, QGridLayout, QFrame, QSizePolicy
 from PyQt5.QtGui import QPainter, QPolygon, QColor, QPen
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -44,11 +44,11 @@ class readTable(QWidget):
         long1 = float(row['LONGITUDE'])
         head1 = float(row['HEADING'])
         spd = float(row['STW'])
-        sfc1 = int(float(row['ENGINE_1_FUEL_CONSUMPTION']) + float(row['ENGINE_2_FUEL_CONSUMPTION']))
+        sfc1 = int((float(row['ENGINE_1_FUEL_CONSUMPTION']) + float(row['ENGINE_2_FUEL_CONSUMPTION']))/2)
 
         next_row = self.table[index + 1]
         head2 = float(next_row['HEADING'])
-        sfc2 = int(float(next_row['ENGINE_1_FUEL_CONSUMPTION']) + float(next_row['ENGINE_2_FUEL_CONSUMPTION']))
+        sfc2 = int((float(next_row['ENGINE_1_FUEL_CONSUMPTION']) + float(next_row['ENGINE_2_FUEL_CONSUMPTION']))/2)
         if next_row:
             lat2 = float(next_row['LATITUDE'])
             long2 = float(next_row['LONGITUDE'])
@@ -61,7 +61,7 @@ class readTable(QWidget):
 class compass(QWidget):
     def __init__(self):
         super(compass, self).__init__()
-        self.setFixedSize(190, 250)
+        self.setFixedSize(190, 210)
         self.init_ui()
 
     def init_ui(self):
@@ -79,15 +79,17 @@ class compass(QWidget):
 
         # Add a label widget to name the dial
         self.label = QLabel('Heading')
-        self.label.setFixedSize(80, 20)
-        self.label.setAlignment(Qt.AlignCenter)
+        # self.label.setStyleSheet("background: rgb(255, 0, 0 );")
+        self.label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        # self.label.setFixedHeight(30)
+        self.label.setAlignment(Qt.AlignTop | Qt.AlignCenter)
         layout.addWidget(self.label)
 
         self.setLayout(layout)
 
     # Rorate the 'indicator_heading.png' image to the optimal position and replace the old one
     def update(self, rot_c, rot_i):
-        rot_i = (rot_i/1500)*270 - 135 + 90
+        rot_i = -(rot_i-rot_c)
 
         rot_indicator = QtGui.QPixmap.fromImage(ImageQt(self.indicator_new.rotate(-int(rot_i))))
         self.speedometer_ui.indicator.setPixmap(rot_indicator)
@@ -96,7 +98,7 @@ class compass(QWidget):
 class sfcDial(QWidget):
     def __init__(self):
         super(sfcDial, self).__init__()
-        self.setFixedSize(190, 250)
+        self.setFixedSize(190, 210)
         self.init_ui()
 
     def init_ui(self):
@@ -115,16 +117,21 @@ class sfcDial(QWidget):
 
         # Add a label to name the dial
         self.label = QLabel('SFC')
-        self.label.setFixedSize(80, 20)
-        self.label.setAlignment(Qt.AlignCenter)
+        # self.label.setFixedSize(80, 20)
+        # self.label.setAlignment(Qt.AlignCenter)
+        # self.label.setStyleSheet("background: rgb(255, 0, 0 );")
+        self.label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        # self.label.setFixedHeight(30)
+        self.label.setAlignment(Qt.AlignTop | Qt.AlignCenter)
         layout.addWidget(self.label)
+
 
         self.setLayout(layout)
 
     # Rotate the 'needle_spd.png' to show current SFC and 'indicator_spd.png' to show optimal SFC and replace the old ones
     def update(self, rot_n, rot_i):
-        rot_n = (rot_n/1500)*270 - 135
-        rot_i = (rot_i/1500)*270 - 135
+        rot_n = (rot_n/960)*240
+        rot_i = (rot_i/960)*240
 
         rot_needle = QtGui.QPixmap.fromImage(ImageQt(self.needle_new.rotate(-int(rot_n))))
         rot_indicator = QtGui.QPixmap.fromImage(ImageQt(self.indicator_new.rotate(-int(rot_i))))
@@ -134,7 +141,8 @@ class sfcDial(QWidget):
 # SFC plot
 class Canvas(FigureCanvas):
     def __init__(self, parent):
-        self.fig, self.ax = plt.subplots(figsize=(4.05, 1.9), dpi=100)
+        # self.fig, self.ax = plt.subplots(figsize=(4.05, 1.9), dpi=100)
+        self.fig, self.ax = plt.subplots(figsize=(1, 1), dpi=100)
         super().__init__(self.fig)
         self.setParent(parent)
 
@@ -144,6 +152,8 @@ class Canvas(FigureCanvas):
         self.line_2, = self.ax.plot(self.data_2, label='Optimal SFC')
 
         self.ax.set(xlabel='time (min)', ylabel='SFC (L/h)', title='SFC')
+        # adjust plot margin to show axis names
+        self.fig.subplots_adjust(left=0.22, right=0.9, top=0.88, bottom=0.25)
         self.ax.legend()
         self.ax.grid()
 
@@ -165,6 +175,9 @@ class AppDemo(QWidget):
         super().__init__()
 
         self.chart = Canvas(self)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.chart)
 
     def add_data(self, new_value_1, new_value_2):
         self.chart.update_plot(new_value_1, new_value_2)
@@ -185,9 +198,13 @@ class infoDisplay(QWidget):
         # Need to initialize self.lables with the info we want to show
         # Then add each label widget in self.labels to the grid
         self.labels = []
+        self.variables = ['Latitude', 'Longitude', 'Speed', 'Heading']
         for i in range(2):
             for j in range(4):
-                label = QLabel(f'Label {i * 4 + j + 1}', self)
+                if (i * 4 + j) < len(self.variables):
+                    label = QLabel(self.variables[i*4+j], self)
+                else:
+                    label = QLabel(f'Label {i * 4 + j + 1}', self)
                 label.setFrameShape(QFrame.Box)
                 #label.setStyleSheet("padding: 5px; border: 1px solid white; color: white;")
                 #label.setStyleSheet("padding: 5px; border: 1px solid white")
@@ -195,7 +212,7 @@ class infoDisplay(QWidget):
                 self.grid.addWidget(label, i, j)
                 self.labels.append(label)
 
-        self.change_page(self.current_page)
+        #self.change_page(self.current_page)
 
         # Create buttons for changing page
         self.prev_button = QPushButton('←', self)
@@ -221,8 +238,12 @@ class infoDisplay(QWidget):
     # Make the change_page method only change index, not label text
     def change_page(self, page):
         start_index = page * 8
-        for i in range(8):
-            self.labels[i].setText(f'Label {start_index + i + 1}')
+        for i in range(2):
+            for j in range(4):
+                if (i * 4 + j) < len(self.variables):
+                    label = QLabel(self.variables[i*4+j], self)
+                else:
+                    label = QLabel(f'Label {i * 4 + j + 1}', self)
 
     def prev_page(self):
         if self.current_page > 0:
@@ -297,6 +318,7 @@ class numPad(QWidget):
             for buttonText in row:
                 button = QPushButton(buttonText)
                 button.clicked.connect(self.buttonClicked)
+                button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
                 rowLayout.addWidget(button)
 
             layout.addLayout(rowLayout)
@@ -339,22 +361,42 @@ class gui(QWidget):
         # For receiving the nuttonClicked signal to update other information
         self.pad.buttonClickedSignal.connect(self.updateETA)
 
-        layout = QHBoxLayout()
-        subLayout1 = QHBoxLayout()
-        subLayout2 = QVBoxLayout()
-        subLayout3 = QVBoxLayout()
+        # layout = QHBoxLayout()
+        # subLayout1 = QHBoxLayout()
+        # subLayout2 = QVBoxLayout()
+        # subLayout3 = QVBoxLayout()
+        #
+        # subLayout1.addWidget(self.compass)
+        # subLayout1.addWidget(self.dial)
+        # subLayout2.addLayout(subLayout1)
+        # subLayout2.addWidget(self.plot)
+        # subLayout3.addWidget(self.info)
+        # subLayout3.addWidget(self.pad)
+        # layout.addLayout(subLayout2)
+        # layout.addLayout(subLayout3)
+        #
+        # self.setLayout(layout)
 
-        subLayout1.addWidget(self.compass)
-        subLayout1.addWidget(self.dial)
-        subLayout2.addLayout(subLayout1)
-        subLayout2.addWidget(self.plot)
-        subLayout3.addWidget(self.info)
-        subLayout3.addWidget(self.pad)
-        layout.addLayout(subLayout2)
-        layout.addLayout(subLayout3)
+        # adjust margin, setContentsMargins
+        layout = QGridLayout()
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(10)
+        layout.addWidget(self.compass, 0, 0, 4, 2) # assign row and column number to elements
+        layout.addWidget(self.dial, 0, 2, 4, 2)
+        layout.addWidget(self.plot, 4, 0, 6, 4)
+        layout.addWidget(self.info, 0, 4, 3, 2)
+        layout.addWidget(self.pad, 3, 4, 7, 2)
+
+        # layout = QGridLayout()
+        # layout.setContentsMargins(10, 10, 10, 10)
+        # layout.setSpacing(10)
+        # layout.addWidget(self.compass, 0, 0, 4, 2)
+        # layout.addWidget(self.dial, 0, 2, 4, 2)
+        # layout.addWidget(self.plot, 4, 0, 8, 4)
+        # layout.addWidget(self.info, 0, 4, 3, 2)
+        # layout.addWidget(self.pad, 3, 4, 7, 2)
 
         self.setLayout(layout)
-
         self.setWindowTitle('GUI')
         self.setGeometry(320, 220, 800, 480)
 

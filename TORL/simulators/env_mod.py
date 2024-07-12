@@ -30,23 +30,15 @@ class Dynamics(nn.Module):
 
     def __init__(self, state_dim: int, action_dim: int, hidden_dim: int, sequence_num: int, 
                  out_state_num: int, future_num: int, use_future_act: bool = False, 
-                 device: torch.device = 'cuda', train_gamma = 0.99):
+                 device: torch.device = 'cuda', train_gamma = 1.0):
         super().__init__()
         self.input_dim = state_dim + action_dim
         self.lstm = nn.LSTM(input_size=self.input_dim, hidden_size=hidden_dim, num_layers=sequence_num+out_state_num-1, 
                             batch_first=True)
         #self.dropout = nn.Dropout(0.1)
 
-        self.mlp_state = nn.Sequential( nn.ReLU(),
-                                  nn.Linear(hidden_dim, hidden_dim),
-                                  nn.Dropout(0.2),
-                                  nn.ReLU(),
-                                  nn.Linear(hidden_dim, state_dim*out_state_num))        
-        self.mlp_reward = nn.Sequential( nn.ReLU(),
-                                    nn.Linear(hidden_dim, hidden_dim),
-                                    nn.Dropout(0.2),
-                                    nn.ReLU(),
-                                    nn.Linear(hidden_dim, out_state_num))
+        self.linear_state = nn.Linear(hidden_dim, state_dim * out_state_num)
+        self.linear_reward = nn.Linear(hidden_dim, out_state_num)
         self.future_num = future_num
         self.state_dim = state_dim
         self.action_dim = action_dim
@@ -67,8 +59,8 @@ class Dynamics(nn.Module):
             x = torch.cat((action[:,i:i+self.sequence_num,:], state_), dim=-1)
             x, _ = self.lstm(x)
             x = x[:,-1,:]
-            s = self.mlp_state(x).unsqueeze(1)
-            r = self.mlp_reward(x).unsqueeze(1)
+            s = self.linear_state(x).unsqueeze(1)
+            r = self.linear_reward(x).unsqueeze(1)
             s_ = torch.cat((s_, s), dim=1)
             r_ = torch.cat((r_, r), dim=1)
             if is_ar:
@@ -83,6 +75,46 @@ class Dynamics(nn.Module):
             return (s_, r_, loss)
         
         return (s_, r_)
+    
+class GRU_update(nn.Module):
+    def __init__(self, input_size, hidden_size=1, output_size=4, num_layers=1, prediction_horizon=5, device="cuda"):
+        super().__init__()
+        self.h = prediction_horizon
+        self.hidden_size = hidden_size
+        self.output_size = output_size
+        self.gru = nn.GRU(input_size, hidden_size, num_layers, batch_first=True)
+        self.mlp = nn.Sequential( nn.ReLU(),
+                                  nn.Linear(hidden_size, 2048),
+                                  nn.Dropout(0.2),
+                                  nn.ReLU(),
+                                  nn.Linear(2048, output_size))
+        self.hx_fc = nn.Linear(2*hidden_size, hidden_size)
+        self.device = device
+
+    def forward(self, predicted_values, past_time_features):
+        # predicted_values (256, 5, 4)
+        # past_time_features (256, 25, 12)
+        xy = torch.zeros(size=(past_time_features.shape[0], 1, self.output_size)).float().to(self.device)
+        hx = past_time_features.reshape(-1, 1, self.hidden_size)
+        hx = hx.permute(1, 0, 2)
+        out_wp = list()
+        for i in range(self.h):
+            ins = torch.cat([xy, predicted_values[:, i:i+1, :]], dim=1) # x
+            # output hx (batch, 2, 69)
+            hx, _ = self.gru(ins, hx.contiguous())
+            hx = hx.reshape(-1, 2*self.hidden_size)
+            hx = self.hx_fc(hx)
+            d_xy = self.mlp(hx).reshape(-1, 1, self.output_size) #control v4
+            hx = hx.reshape(1, -1, self.hidden_size)
+            # print("dxy", d_xy)
+            #(256,1,4) + (256,1,4)
+            xy = xy + d_xy
+            out_wp.append(xy)
+        pred_wp = torch.stack(out_wp, dim=1).squeeze(2)
+        # (256, 5, 4)
+        return pred_wp
+
+    
 
 class MyEnv:
 
@@ -119,7 +151,10 @@ class MyEnv:
                                     self.config_dict['hidden_dim'], self.config_dict['sequence_num'], 
                                     self.config_dict['out_state_num'], future_num=1,
                                     use_future_act=False, device=self.device)
+        self.gru_nn = GRU_update(self.state_dim+1, (self.state_dim+self.action_dim)*self.config_dict['sequence_num'], 
+                                 self.state_dim+1, 1, 1).to(self.device)
         self.dynamics_nn.load_state_dict(checkpoint["dynamics_nn"])
+        self.gru_nn.load_state_dict(checkpoint["gru_nn"])
         self.sequence_num = self.config_dict['sequence_num']
 
     def reset(self, obs: ObsType) -> None:
@@ -138,9 +173,30 @@ class MyEnv:
         states_ = self.states[-steps:].unsqueeze(0)
         actions_ = self.actions[-steps:].unsqueeze(0)
         with torch.inference_mode():
+            (1, 1, 17) , (1, 1, 1)
             next_state, reward = self.dynamics_nn(states_, actions_, is_eval=True, is_ar=True)
-        next_state = next_state.squeeze(1)
+        
+        if self.istep >= self.sequence_num:
+            input = torch.cat((states_, actions_), dim=2)
+            input = input[:, :self.sequence_num]
+            pred_features = torch.cat((next_state.detach(), reward.detach()), dim=2)
+            with torch.inference_mode():
+                g_pred = self.gru_nn(pred_features, input)
+            g_states_pred = g_pred[:, :, :self.state_dim]
+            g_rewards_pred = g_pred[:, :, self.state_dim:]
+
+            next_state = g_states_pred.squeeze(1)
+            reward = g_rewards_pred.squeeze(1)
+        else:
+            next_state = next_state.squeeze(1)
+            reward = reward.squeeze(1)
+
+        #print("next_state", next_state.shape, "reward", reward.shape)
+        #print("self.states", self.states.shape, "self.actions", self.actions.shape, "self.rewards", self.rewards.shape)
+
+        # (N, state_dim)
         self.states = torch.cat((self.states, next_state), dim=0)
+        # (N)
         self.rewards = torch.cat((self.rewards, reward), dim=0)
         self.istep += 1
         next_state = next_state.detach().cpu()

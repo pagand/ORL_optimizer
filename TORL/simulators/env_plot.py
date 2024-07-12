@@ -13,7 +13,7 @@ import uuid
 from tqdm.auto import trange
 
 from env_util_offline import Config, qlearning_dataset2, get_env_info, sample_batch_offline, get_rsquare
-from env_mod import Dynamics
+from env_mod import Dynamics, GRU_update
 
 
 from mpl_interactions import ioff, panhandler, zoom_factory
@@ -68,9 +68,11 @@ def main(config: Config):
     dynamics_nn = Dynamics(state_dim=state_dim, action_dim=action_dim, hidden_dim=config.hidden_dim,
                             sequence_num=config.sequence_num, out_state_num=config.out_state_num,
                             future_num=config.future_num, device=device)
+    gru_nn = GRU_update(state_dim+1, (state_dim+action_dim)*config.sequence_num, state_dim+1, 1, config.future_num)
     if os.path.exists(config.chkpt_path_nar):
         checkpoint = torch.load(config.chkpt_path_nar)
         dynamics_nn.load_state_dict(checkpoint["dynamics_nn"])
+        gru_nn.load_state_dict(checkpoint["gru_nn"])
         config_dict = checkpoint["config"]
         print("Checkpoint loaded from", config.chkpt_path_nar)
     else:
@@ -78,6 +80,7 @@ def main(config: Config):
         return
 
     dynamics_nn.to(device)
+    gru_nn.to(device)
  
     states, actions, next_states, rewards = sample_batch_offline(
             dataset, 1, config.sequence_num, config.future_num, 
@@ -89,15 +92,30 @@ def main(config: Config):
     with torch.inference_mode():
         next_states_pred_nar, rewards_pred_nar = dynamics_nn(states, actions, is_eval=True, is_ar=False)
 
+    input = torch.cat((states, actions), dim=2)
+    input = input[:, :config.sequence_num]
+    pred_features = torch.cat((next_states_pred_nar.detach(), rewards_pred_nar.detach()), dim=2)
+    with torch.inference_mode():
+        g_pred = gru_nn(pred_features, input)
+    g_states_pred = g_pred[:, :, :state_dim]
+    g_rewards_pred = g_pred[:, :, state_dim:]
 
-    next_states_pred_nar = next_states_pred_nar.cpu().detach().numpy()
+
+
+    next_states_pred_nar = g_states_pred.cpu().detach().numpy()
+    rewards_pred_nar = g_rewards_pred.cpu().detach().numpy()
+    print("next_states_pred_nar", next_states_pred_nar.shape, "next_states", next_states.shape)
     rsqr_nar = get_rsquare(next_states[:,:,:state_dim], next_states_pred_nar[:,:,:state_dim])
+
+    ##############################################################3
     dynamics_nn = Dynamics(state_dim=state_dim, action_dim=action_dim, hidden_dim=config.hidden_dim,
                             sequence_num=config.sequence_num, out_state_num=config.out_state_num,
                             future_num=config.future_num, device=device)
+    gru_nn = GRU_update(state_dim+1, (state_dim+action_dim)*config.sequence_num, state_dim+1, 1, config.future_num)
     if os.path.exists(config.chkpt_path_ar):
         checkpoint = torch.load(config.chkpt_path_ar)
         dynamics_nn.load_state_dict(checkpoint["dynamics_nn"])
+        gru_nn.load_state_dict(checkpoint["gru_nn"])
         config_dict = checkpoint["config"]
         print("Checkpoint loaded from", config.chkpt_path_ar)
     else:
@@ -106,19 +124,28 @@ def main(config: Config):
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     dynamics_nn.to(device)
+    gru_nn.to(device)
 
     with torch.inference_mode():
         next_states_pred_ar, rewards_pred_ar = dynamics_nn(states, actions, is_eval=True, is_ar=True)
+    
+    input = torch.cat((states, actions), dim=2)
+    input = input[:, :config.sequence_num]
+    pred_features = torch.cat((next_states_pred_ar.detach(), rewards_pred_ar.detach()), dim=2)
+    with torch.inference_mode():
+        g_pred = gru_nn(pred_features, input)
+    g_states_pred = g_pred[:, :, :state_dim]
+    g_rewards_pred = g_pred[:, :, state_dim:]
 
-    next_states_pred_ar = next_states_pred_ar.cpu().detach().numpy()
+    next_states_pred_ar = g_states_pred.cpu().detach().numpy()
+    rewards_pred_ar = g_rewards_pred.cpu().detach().numpy()
+
     rsqr_ar = get_rsquare(next_states[:,:,:state_dim], next_states_pred_ar[:,:,:state_dim])
 
     print("R^2 NAR:", rsqr_nar, "R^2 AR:", rsqr_ar)
 
     rewards = rewards.cpu().detach().numpy()
-    rewards_pred_nar = rewards_pred_nar.cpu().detach().numpy()
     reward_rsqr_nar = get_rsquare(rewards, rewards_pred_nar)
-    rewards_pred_ar = rewards_pred_ar.cpu().detach().numpy()
     reward_rsqr_ar = get_rsquare(rewards, rewards_pred_ar)
     print("Reward R^2 NAR:", reward_rsqr_nar, "Reward R^2 AR:", reward_rsqr_ar)
 
@@ -134,7 +161,6 @@ def main(config: Config):
     plot_states(next_states, next_states_pred_nar, next_states_pred_ar, 5)
 
     plot_states(next_states, next_states_pred_nar, next_states_pred_ar, 12)
-
 
 
 if __name__ == "__main__":

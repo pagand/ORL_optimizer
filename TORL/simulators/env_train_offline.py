@@ -14,7 +14,7 @@ import uuid
 from tqdm.auto import trange
 
 from env_util_offline import Config, qlearning_dataset, get_env_info, sample_batch_offline, qlearning_dataset2
-from env_mod import Dynamics
+from env_mod import Dynamics, GRU_update
 from torch import nn
 
 class MeanFourthPowerError(nn.Module):
@@ -52,6 +52,8 @@ def main(config: Config):
     dynamics_nn = Dynamics(state_dim=state_dim, action_dim=action_dim, hidden_dim=config.hidden_dim,
                             sequence_num=config.sequence_num, out_state_num=config.out_state_num,
                             future_num=config.future_num, device=device)
+    
+    gru = GRU_update(state_dim+1, (state_dim+action_dim)*config.sequence_num, state_dim+1, 1, config.future_num).to(device)
     if config.is_ar:
         chkpt_path = config.chkpt_path_ar
     else:
@@ -59,23 +61,21 @@ def main(config: Config):
     if config.load_chkpt and os.path.exists(chkpt_path):
         checkpoint = torch.load(chkpt_path)
         dynamics_nn.load_state_dict(checkpoint["dynamics_nn"])
+        gru.load_state_dict(checkpoint["gru_nn"])
         config_dict = checkpoint["config"]
         print("Checkpoint loaded from", chkpt_path)
 
     dynamics_optimizer = torch.optim.Adam(dynamics_nn.parameters(), lr=config.dynamics_lr, weight_decay=config.dynamics_weight_decay)
+    gru_optimizer = torch.optim.Adam(gru.parameters(), lr=config.dynamics_lr, weight_decay=config.dynamics_weight_decay)
     criterion = torch.nn.MSELoss()
     #criterion = MeanFourthPowerError()
-
 
     dynamics_nn.to(device)
 
     dynamics_losses = np.array([])
     hold_out_losses = np.array([])
 
-    train_gamma = 0.98
     # generate a geometric sequence of gammas
-    state_gammas = Tensor([[train_gamma**j for i in range(state_dim)] for j in range(config.future_num)]).to(device)
-    reward_gammas = Tensor([train_gamma**i for i in range(config.future_num)]).unsqueeze(1).to(device)
     hold_out_losses = np.array([])
     hold_out_loss = np.array([])
     t = trange(config.num_epochs, desc="Training")
@@ -88,14 +88,28 @@ def main(config: Config):
         next_states = next_states.to(device)
         next_rewards = next_rewards.to(device)
         dynamics_nn.train()
+        gru.train()
         next_states_pred, rewards_pred, loss = dynamics_nn(states, actions, next_state=next_states, 
                                                            next_reward=next_rewards, is_eval=False, is_ar=config.is_ar)
+        
+        input = torch.cat((states, actions), dim=2)
+        input = input[:, :config.sequence_num]
+        pred_features = torch.cat((next_states_pred.detach(), rewards_pred.detach()), dim=2)
+        g_pred = gru(pred_features, input)
+        #print("g_states_pred", g_pred.shape)
+        g_states_pred = g_pred[:, :, :state_dim]
+        g_rewards_pred = g_pred[:, :, state_dim:]
+        loss2 = criterion(g_states_pred, next_states) + criterion(g_rewards_pred, next_rewards)
         #print("rewards_pred", rewards_pred.shape, "rewards", rewards.shape)
         #print("next_states_pred", next_states_pred.shape, "next_states", next_states.shape)
         #loss = criterion(next_states_pred, next_states) + criterion(rewards_pred, rewards)
         dynamics_optimizer.zero_grad()
+        gru_optimizer.zero_grad()
         loss.backward()
+        loss2.backward()
         dynamics_optimizer.step()
+        gru_optimizer.step()
+
         loss_ = loss.cpu().detach().numpy()
         dynamics_losses = np.append(dynamics_losses, loss_)
         if config.holdout_per>0 and len(hold_out_loss)>0:
@@ -105,17 +119,19 @@ def main(config: Config):
 
         wandb.log({"dynamics_loss": loss.item(),
                      "dynamics_loss_mean": np.mean(dynamics_losses),
-                     "dynamics_loss_std": np.std(dynamics_losses)
+                     "dynamics_loss_std": np.std(dynamics_losses),
+                     "GRU_loss": loss2.item(),
         })
 
         if epoch>0 and config.save_chkpt_per>0 and (epoch % config.save_chkpt_per == 0 or epoch == config.num_epochs-1):
             torch.save({
                 "dynamics_nn": dynamics_nn.state_dict(),
+                "gru_nn": gru.state_dict(),
                 "config": asdict(config)
             }, chkpt_path)
 
         #evaluate holdout data
-
+        '''
         if config.holdout_per>0 and (epoch % config.holdout_per == 0 or epoch == config.num_epochs-1):
             hold_out_loss = np.array([])
             for j in range(config.holdout_num):
@@ -139,7 +155,7 @@ def main(config: Config):
                             "holdout_loss_mean": np.mean(hold_out_losses),
                             "holdout_loss_std": np.std(hold_out_losses)
                 })
-
+        '''
     wandb.finish()
     print("Checkpoint saved to", chkpt_path)
 

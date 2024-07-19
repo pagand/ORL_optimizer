@@ -210,7 +210,7 @@ class MyEnv:
                                     self.config_dict['hidden_dim'], self.config_dict['sequence_num'], 
                                     self.config_dict['out_state_num'], future_num=1,
                                     use_future_act=False, device=self.device)
-        self.gru_nn = GRU_update(self.state_dim+1, (self.state_dim+self.action_dim)*self.config_dict['sequence_num'], 
+        self.gru_nn = GRU_update(self.state_dim+1, self.state_dim, (self.state_dim+self.action_dim)*self.config_dict['sequence_num'], 
                                  self.state_dim+1, 1, 1).to(self.device)
         self.dynamics_nn.load_state_dict(checkpoint["dynamics_nn"])
         self.gru_nn.load_state_dict(checkpoint["gru_nn"])

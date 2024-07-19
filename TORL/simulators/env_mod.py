@@ -4,6 +4,7 @@ import torch.nn as nn
 from typing import TypeVar, List, Tuple, Dict, Any
 from torch import Tensor
 from torch.nn.functional import pad
+from torch.distributions import Normal
 
 ObsType = TypeVar("ObsType")
 ActType = TypeVar("ActType")
@@ -30,12 +31,18 @@ class Dynamics(nn.Module):
 
     def __init__(self, state_dim: int, action_dim: int, hidden_dim: int, sequence_num: int, 
                  out_state_num: int, future_num: int, use_future_act: bool = False, 
-                 device: torch.device = 'cuda', train_gamma = 1.0):
+                 device: torch.device = 'cuda', train_gamma = 0.99):
         super().__init__()
         self.input_dim = state_dim + action_dim
         self.lstm = nn.LSTM(input_size=self.input_dim, hidden_size=hidden_dim, num_layers=sequence_num+out_state_num-1, 
                             batch_first=True)
-        #self.dropout = nn.Dropout(0.1)
+        self.mlps = nn.ModuleList(
+            [nn.Sequential(
+                nn.LayerNorm(hidden_dim),
+                nn.Linear(hidden_dim, hidden_dim),
+                nn.ReLU(),
+                nn.Dropout(0.2),
+                ) for _ in range(1)])
 
         self.linear_state = nn.Linear(hidden_dim, state_dim * out_state_num)
         self.linear_reward = nn.Linear(hidden_dim, out_state_num)
@@ -59,6 +66,8 @@ class Dynamics(nn.Module):
             x = torch.cat((action[:,i:i+self.sequence_num,:], state_), dim=-1)
             x, _ = self.lstm(x)
             x = x[:,-1,:]
+            for mlp in self.mlps:
+                x = mlp(x) + x
             s = self.linear_state(x).unsqueeze(1)
             r = self.linear_reward(x).unsqueeze(1)
             s_ = torch.cat((s_, s), dim=1)
@@ -77,8 +86,11 @@ class Dynamics(nn.Module):
         return (s_, r_)
     
 class GRU_update(nn.Module):
-    def __init__(self, input_size, hidden_size=1, output_size=4, num_layers=1, prediction_horizon=5, device="cuda"):
+    def __init__(self, input_size, state_dim, hidden_size=1, output_size=4, num_layers=1, prediction_horizon=5, device="cuda", train_gamma=0.99):
         super().__init__()
+        future_num = prediction_horizon
+        self.state_dim = state_dim
+        self.future_num = prediction_horizon
         self.h = prediction_horizon
         self.hidden_size = hidden_size
         self.output_size = output_size
@@ -90,8 +102,11 @@ class GRU_update(nn.Module):
                                   nn.Linear(2048, output_size))
         self.hx_fc = nn.Linear(2*hidden_size, hidden_size)
         self.device = device
+        self.train_gamma = train_gamma
+        self.state_gammas = Tensor([[train_gamma**j for i in range(state_dim)] for j in range(future_num)]).to(device)
+        self.reward_gammas = Tensor([train_gamma**i for i in range(future_num)]).unsqueeze(1).to(device)
 
-    def forward(self, predicted_values, past_time_features):
+    def forward(self, predicted_values, past_time_features, next_state = None, next_reward = None):
         # predicted_values (256, 5, 4)
         # past_time_features (256, 25, 12)
         xy = torch.zeros(size=(past_time_features.shape[0], 1, self.output_size)).float().to(self.device)
@@ -112,9 +127,53 @@ class GRU_update(nn.Module):
             out_wp.append(xy)
         pred_wp = torch.stack(out_wp, dim=1).squeeze(2)
         # (256, 5, 4)
+        if next_state is not None and next_reward is not None:
+            next_state_diff = (((pred_wp[:,:,:self.state_dim] - next_state) * self.state_gammas) ** 2).flatten(1,-1).sum(-1).mean()
+            reward_diff = (((pred_wp[:,:,self.state_dim:] - next_reward) * self.reward_gammas) ** 2).flatten(1,-1).sum(-1).mean()
+            loss = next_state_diff + reward_diff
+            return pred_wp, loss
         return pred_wp
 
+class VAE(nn.Module):
+    def __init__(self, input_dim, latent_dim, hidden_dim):
+        super(VAE, self).__init__()
+        self.encoder = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, latent_dim * 2)  # for mean and log-variance
+        )
+        self.decoder = nn.Sequential(
+            nn.Linear(latent_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, input_dim)
+        )
     
+    def forward(self, x):
+        h = self.encoder(x)
+        mean, log_var = torch.chunk(h, 2, dim=-1)
+
+        std = torch.exp(0.5 * log_var)
+        eps = torch.randn_like(std)
+        z = mean + eps * std
+        recon_x = self.decoder(z)
+        recon_loss = nn.functional.mse_loss(recon_x, x, reduction='sum')
+        kld_loss = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
+        elbo_loss =  recon_loss + kld_loss   
+        return elbo_loss, recon_x, mean, log_var
+    
+    def estimate(self, x):
+        h = self.encoder(x)
+        mean, log_var = torch.chunk(h, 2, dim=-1)
+        std = torch.exp(0.5 * log_var)
+        p_z = Normal(0, 1).log_prob(mean).sum(dim=-1) - log_var.sum(dim=-1)
+        recon_x = self.decoder(mean)
+        p_x_given_z = -nn.functional.mse_loss(recon_x, x, reduction='none').sum(dim=-1)
+        elbo = p_x_given_z + p_z
+        return elbo
 
 class MyEnv:
 
@@ -176,7 +235,7 @@ class MyEnv:
             (1, 1, 17) , (1, 1, 1)
             next_state, reward = self.dynamics_nn(states_, actions_, is_eval=True, is_ar=True)
         
-        if self.istep >= self.sequence_num:
+        if self.config_dict['use_gru_update'] and self.istep >= self.sequence_num:
             input = torch.cat((states_, actions_), dim=2)
             input = input[:, :self.sequence_num]
             pred_features = torch.cat((next_state.detach(), reward.detach()), dim=2)
@@ -205,7 +264,7 @@ class MyEnv:
         return next_state, reward, done
 
 def main():
-    chkpt_path = "/home/james/sfu/ORL_optimizer/TORL/config/halfcheetah_medium_v2_ar.pt"
+    chkpt_path = "TORL/config/halfcheeth/halfcheetah_medium_v2_ar.pt"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     env = MyEnv(chkpt_path, 17, 6, device)
     obs = torch.randn(1, 17)

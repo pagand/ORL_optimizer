@@ -13,7 +13,7 @@ import pyrallis
 import uuid
 from tqdm.auto import trange
 
-from env_util_offline import Config, qlearning_dataset, get_env_info, sample_batch_offline, qlearning_dataset2
+from env_util_offline import Config, qlearning_dataset, get_env_info, sample_batch_offline, qlearning_dataset2, str_to_floats
 from env_mod import Dynamics, GRU_update
 from torch import nn
 
@@ -46,14 +46,14 @@ def main(config: Config):
     # comma separated list of datasets
     dsnames = config.dataset_name.split(",")
     env = gym.make(dsnames[0])
-    dataset = qlearning_dataset2(dsnames)
+    data_train, data_holdout, *_ = qlearning_dataset2(dsnames, verbose=True)
     state_dim, action_dim = get_env_info(env)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     dynamics_nn = Dynamics(state_dim=state_dim, action_dim=action_dim, hidden_dim=config.hidden_dim,
                             sequence_num=config.sequence_num, out_state_num=config.out_state_num,
                             future_num=config.future_num, device=device)
+    gru = GRU_update(state_dim+1, state_dim, (state_dim+action_dim)*config.sequence_num, state_dim+1, 1, config.future_num).to(device)
     
-    gru = GRU_update(state_dim+1, (state_dim+action_dim)*config.sequence_num, state_dim+1, 1, config.future_num).to(device)
     if config.is_ar:
         chkpt_path = config.chkpt_path_ar
     else:
@@ -81,47 +81,58 @@ def main(config: Config):
     t = trange(config.num_epochs, desc="Training")
     for epoch in t:
         states, actions, next_states, next_rewards = sample_batch_offline(
-            dataset, config.batch_size, config.sequence_num, config.future_num, config.out_state_num, is_eval=False,
-            is_holdout=False, randomize=config.train_randomize)
+            data_train, config.batch_size, config.sequence_num, config.future_num, config.out_state_num, 
+            randomize=config.train_randomize)
         states = states.to(device)
         actions = actions.to(device)
         next_states = next_states.to(device)
         next_rewards = next_rewards.to(device)
         dynamics_nn.train()
-        gru.train()
+        
+        dynamics_optimizer.zero_grad()
         next_states_pred, rewards_pred, loss = dynamics_nn(states, actions, next_state=next_states, 
                                                            next_reward=next_rewards, is_eval=False, is_ar=config.is_ar)
-        
-        input = torch.cat((states, actions), dim=2)
-        input = input[:, :config.sequence_num]
-        pred_features = torch.cat((next_states_pred.detach(), rewards_pred.detach()), dim=2)
-        g_pred = gru(pred_features, input)
-        #print("g_states_pred", g_pred.shape)
-        g_states_pred = g_pred[:, :, :state_dim]
-        g_rewards_pred = g_pred[:, :, state_dim:]
-        loss2 = criterion(g_states_pred, next_states) + criterion(g_rewards_pred, next_rewards)
-        #print("rewards_pred", rewards_pred.shape, "rewards", rewards.shape)
-        #print("next_states_pred", next_states_pred.shape, "next_states", next_states.shape)
-        #loss = criterion(next_states_pred, next_states) + criterion(rewards_pred, rewards)
-        dynamics_optimizer.zero_grad()
-        gru_optimizer.zero_grad()
         loss.backward()
-        loss2.backward()
         dynamics_optimizer.step()
-        gru_optimizer.step()
 
-        loss_ = loss.cpu().detach().numpy()
+        if config.use_gru_update:
+            gru.train()
+            gru_optimizer.zero_grad()
+            input = torch.cat((states, actions), dim=2)
+            input = input[:, :config.sequence_num]
+            pred_features = torch.cat((next_states_pred.detach(), rewards_pred.detach()), dim=2)
+            g_pred, loss2 = gru(pred_features, input, next_states, next_rewards)
+            #print("g_states_pred", g_pred.shape)
+            g_states_pred = g_pred[:, :, :state_dim]
+            g_rewards_pred = g_pred[:, :, state_dim:]
+            #print("rewards_pred", rewards_pred.shape, "rewards", rewards.shape)
+            #print("next_states_pred", next_states_pred.shape, "next_states", next_states.shape)
+            #loss = criterion(next_states_pred, next_states) + criterion(rewards_pred, rewards)
+            loss2.backward()
+
+            gru_optimizer.step()
+
+        if config.use_gru_update:
+            loss_ = loss2.cpu().detach().numpy()
+        else:
+            loss_ = loss.cpu().detach().numpy()
         dynamics_losses = np.append(dynamics_losses, loss_)
         if config.holdout_per>0 and len(hold_out_loss)>0:
             t.set_description(f"DL:{loss_:.2f} DLM:{np.mean(dynamics_losses):.2f} HLM:{np.mean(hold_out_loss[:]):.2f}")
         else:
             t.set_description(f"DL:{loss_:.2f} DLM:{np.mean(dynamics_losses):.2f})")
 
-        wandb.log({"dynamics_loss": loss.item(),
-                     "dynamics_loss_mean": np.mean(dynamics_losses),
-                     "dynamics_loss_std": np.std(dynamics_losses),
-                     "GRU_loss": loss2.item(),
-        })
+        if config.use_gru_update:
+            wandb.log({"dynamics_loss": loss.item(),
+                        "dynamics_loss_mean": np.mean(dynamics_losses),
+                        "dynamics_loss_std": np.std(dynamics_losses),
+                        "GRU_loss": loss2.item(),
+            })
+        else:
+            wandb.log({"dynamics_loss": loss.item(),
+                        "dynamics_loss_mean": np.mean(dynamics_losses),
+                        "dynamics_loss_std": np.std(dynamics_losses),
+            })
 
         if epoch>0 and config.save_chkpt_per>0 and (epoch % config.save_chkpt_per == 0 or epoch == config.num_epochs-1):
             torch.save({
@@ -131,31 +142,44 @@ def main(config: Config):
             }, chkpt_path)
 
         #evaluate holdout data
-        '''
         if config.holdout_per>0 and (epoch % config.holdout_per == 0 or epoch == config.num_epochs-1):
             hold_out_loss = np.array([])
             for j in range(config.holdout_num):
                 states, actions, next_states, next_rewards = sample_batch_offline(
-                    dataset, config.holdout_num, config.sequence_num, config.future_num, config.out_state_num, is_eval=True,
-                    is_holdout=True, randomize=config.holdout_randomize)
+                    data_holdout, config.holdout_num, config.sequence_num, config.future_num, config.out_state_num,
+                    randomize=config.holdout_randomize)
                 states = states.to(device)
                 actions = actions.to(device)
                 next_states = next_states.to(device)
                 next_rewards = next_rewards.to(device)
                 dynamics_nn.eval()
+                
                 with torch.inference_mode():
                     next_states_pred, rewards_pred, loss = dynamics_nn(states, actions,  
                                                                        next_state=next_states, next_reward=next_rewards, 
                                                                        is_eval=True, is_ar=config.is_ar)
-                #loss = criterion(next_states_pred, next_states)
                 loss = loss.cpu().detach().numpy()
-                hold_out_loss = np.append(hold_out_loss, loss)                
-                hold_out_losses = np.append(hold_out_losses, loss)
+                if config.use_gru_update:
+                    gru.eval()
+                    input = torch.cat((states, actions), dim=2)
+                    input = input[:, :config.sequence_num]
+                    pred_features = torch.cat((next_states_pred, rewards_pred), dim=2)
+                    g_pred, loss2 = gru(pred_features, input, next_states, next_rewards)
+                    g_states_pred = g_pred[:, :, :state_dim]
+                    g_rewards_pred = g_pred[:, :, state_dim:]
+                    loss2 = loss2.cpu().detach().numpy()
+                #loss = criterion(next_states_pred, next_states)
+               
+                if config.use_gru_update:
+                    hold_out_loss = np.append(hold_out_loss, loss2)
+                    hold_out_losses = np.append(hold_out_losses, loss2)
+                else:
+                    hold_out_loss = np.append(hold_out_loss, loss)                
+                    hold_out_losses = np.append(hold_out_losses, loss)
                 wandb.log({"holdout_loss": np.mean(hold_out_loss), 
                             "holdout_loss_mean": np.mean(hold_out_losses),
                             "holdout_loss_std": np.std(hold_out_losses)
                 })
-        '''
     wandb.finish()
     print("Checkpoint saved to", chkpt_path)
 

@@ -8,6 +8,7 @@ import torch
 from dataclasses import dataclass
 import uuid
 import time
+from copy import deepcopy
 
 @dataclass
 class Config:
@@ -15,8 +16,9 @@ class Config:
     group: str = "env"
     name: str = "env_train_offline"
     dataset_name: str = "halfcheetah-medium-v2"
-    chkpt_path_nar: str = "/home/james/sfu/ORL_optimizer/OtherModels/chkpt/halfcheetah_medium_v2_nar.pt"
-    chkpt_path_ar: str = "/home/james/sfu/ORL_optimizer/OtherModels/chkpt/halfcheetah_medium_v2_ar.pt"
+    chkpt_path_nar: str = "halfcheetah_medium_v2_nar.pt"
+    chkpt_path_ar: str = "halfcheetah_medium_v2_ar.pt"
+    vae_chkpt_path: str = "halfcheetah_medium_v2_vae.pt"
     load_chkpt: bool = True
     save_chkpt_per: int = 1000
     sequence_num: int = 5
@@ -36,43 +38,118 @@ class Config:
     holdout_per: int = 500
     holdout_num: int = 10
     holdout_randomize: bool = True
+    use_gru_update: bool = False
+    state_mean: str = "-0.09054383,0.21359634,-0.039617203,-0.14242846,-0.17935772,-0.038256247,-0.04576236,-0.026318174,5.377604,-0.045250077,-0.117484234,0.17317177,0.14339644,0.17538531,0.39721647,-0.1512541,-0.016864209"
+    state_std: str = "0.12865594,0.7995007,0.40174076,0.3704901,0.26832765,0.50396156,0.31592974,0.28541404,4.8088756,0.69612664,1.7627896,8.481902,9.107612,6.3224244,10.596246,6.5739717,6.2896786"
+    reward_mean: float = 0.0
+    reward_std: float = 1.0
 
     def refresh_name(self):
         self.name = f"{self.name}-{self.dataset_name}-{str(uuid.uuid4())[:8]}"
 
+def str_to_floats(data: str) -> np.ndarray:
+    return np.array([float(x) for x in data.split(",")])
+
+def normalize_state(state: np.ndarray, mean: np.ndarray, std: np.ndarray) -> np.ndarray:
+    return (state - mean) / std
+
+def denormalize_state(state: np.ndarray, mean: np.ndarray, std: np.ndarray) -> np.ndarray:
+    return state * std + mean
+
 def qlearning_dataset2(
         dsnames: List[str],
+        use_normalize_state: bool = True,
+        ext_mean: np.ndarray = None,
+        ext_std: np.ndarray = None,
+        ext_mean_reward: float = None,
+        ext_std_reward: float = None,
+        use_ext_mean_std: bool = False,
+        verbose: bool = False,
         terminate_on_end: bool = False,
         **kwargs,
-) -> Dict:
+):
+    perc_train = 0.8
+    perc_holdout = 0.1
+    data_train = dict()
+    data_holdout = dict()
+    data_test = dict()
+    init = True
     data = None
     for dsname in dsnames:
         data_ = qlearning_dataset_(dsname, terminate_on_end, **kwargs)
         if data is None:
             data = data_
         else:
-            for key in data:
+            for key in data_.keys():
                 data[key] = np.concatenate((data[key], data_[key]), axis=0)
-    start_ = []
-    stop_ = []
 
-    episode_ = data["episode"]
-    start = 0
-    for i in range(len(episode_)):
-        #print("i", i, "episode_[i]", episode_[i])
-        if episode_[i] == 0:
-            start = i
-        start_.append(start)
-    stop = len(episode_)
-    for i in range(len(episode_)-1, -1, -1):
-        if episode_[i] == 0:
-            stop = i
-        stop_.append(stop)
-    stop_.reverse()
-    data["start"] = np.array(start_)
-    data["stop"] = np.array(stop_)
-    return data
+        N = data_["state"].shape[0]
+        for i in range(N):
+            if data_["episode"][i] == 0 and i>N*perc_train:
+                N_holdout = i
+                break
+        for i in range(N):
+            if data_["episode"][i] == 0 and i>N*(perc_train+perc_holdout):
+                N_test = i
+                break
+
+        if init:
+            for key in data_.keys():
+                data_train[key] = data_[key][:N_holdout]
+                data_holdout[key] = data_[key][N_holdout:N_test]
+                data_test[key] = data_[key][N_test:]
+            init = False
+        else:
+            for key in data_.keys():
+                data_train[key] = np.concatenate((data_train[key], data_[key][:N_holdout]), axis=0)
+                data_holdout[key] = np.concatenate((data_holdout[key], data_[key][N_holdout:N_test]), axis=0)
+                data_test[key] = np.concatenate((data_test[key], data_[key][N_test:]), axis=0)
+
+    mean = np.mean(data["state"], axis=0)
+    std = np.std(data["state"], axis=0)
+    mean_reward = np.mean(data["reward"], axis=0)
+    std_reward = np.std(data["reward"], axis=0)
+    if verbose:
+        print_array(mean, "state mean")
+        print_array(std, "state std")
+        print("mean reward", mean_reward, "std reward", std_reward)
+
+    for dt in [data_train, data_holdout, data_test]:                
+        start_ = []
+        stop_ = []
+
+        episode_ = dt["episode"]
+        start = 0
+        for i in range(len(episode_)):
+            #print("i", i, "episode_[i]", episode_[i])
+            if episode_[i] == 0:
+                start = i
+            start_.append(start)
+        stop = len(episode_)
+        for i in range(len(episode_)-1, -1, -1):
+            if episode_[i] == 0:
+                stop = i
+            stop_.append(stop)
+        stop_.reverse()
+        dt["start"] = np.array(start_)
+        dt["stop"] = np.array(stop_)
+        if use_normalize_state:
+            if use_ext_mean_std:
+                dt["state"] = normalize_state(dt["state"], ext_mean, ext_std)
+                dt["next_state"] = normalize_state(dt["next_state"], ext_mean, ext_std)
+                dt["reward"] = (dt["reward"] - ext_mean_reward) / ext_std_reward
+            else:
+                dt["state"] = normalize_state(dt["state"], mean, std)
+                dt["next_state"] = normalize_state(dt["next_state"], mean, std)
+                dt["reward"] = (dt["reward"] - mean_reward) / std_reward
+
+    return data_train, data_holdout, data_test, mean, std, mean_reward, std_reward
     
+def print_array(data, name):
+    print(name, end=": ")
+    for i in range(data.shape[0]):
+        print(data[i], end=",")
+    print()
 
 def qlearning_dataset_(
     dsname: str,
@@ -221,10 +298,9 @@ def sample_batch_offline(
     sequence_num: int,
     future_num: int,
     out_state_num: int,
-    is_eval: bool,
-    is_holdout: bool = False,
     randomize: bool = False,
-) -> Tuple[Tensor, Tensor, Tensor]:
+    seq_idx: int = -1,
+) -> Tuple[Tensor, Tensor, Tensor, int]:
     '''
     output:
     states: (batch_size, sequence_num, state_dim)
@@ -244,20 +320,19 @@ def sample_batch_offline(
     rewards = torch.empty((0, sequence_num+future_num-1, 1))
     next_states = torch.empty((0, future_num, out_state_num*state_dim))
     nrewards = torch.empty((0, future_num, out_state_num))
-    while samples_left > 0:
-        '''
-        # 90% of the data is used for training, ~10% for evaluation
-        if is_eval:
-            index = np.random.randint(N*0.9+1000, N)
+    while samples_left > 0 and seq_idx < N-1:
+        if seq_idx == -1:
+            index = np.random.randint(0, N)
+            start = dataset["start"][index]
+            stop_ = dataset["stop"][index]
         else:
-            if is_holdout:
-                index = np.random.randint(N*0.8+1000, N*0.9)
-            else:
-                index = np.random.randint(0, N*0.8)
-        '''
-        index = np.random.randint(0, N)
-        start = dataset["start"][index]
-        stop_ = dataset["stop"][index]
+            for i in range(seq_idx, N):
+                if dataset["episode"][i] == 0:
+                    start = dataset["start"][i]
+                    stop_ = dataset["stop"][i+1]
+                    seq_idx = stop_
+                    break
+        #print("start", start, "stop_", stop_, "N", N)
         if stop_-start < sequence_num+future_num+out_state_num-1:
             continue
         step = min(samples_left, stop_-start-sequence_num-future_num-out_state_num+2)
@@ -289,7 +364,10 @@ def sample_batch_offline(
         nrewards = torch.cat((nrewards, torch.tensor(nrewards_, dtype=torch.float32)), dim=0)
 
         samples_left -= step
-    return states, actions, next_states, nrewards
+    if seq_idx == -1:
+        return states, actions, next_states, nrewards
+    else:
+        return states, actions, next_states, nrewards, seq_idx
 
 def get_rsquare(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     y_true = y_true.flatten()
@@ -298,3 +376,10 @@ def get_rsquare(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     ss_tot = np.sum((y_true-y_mean)**2)
     ss_res = np.sum((y_true-y_pred)**2)
     return 1 - ss_res/ss_tot
+
+def get_vae_sample(data, batch_size, device):
+    N = data['state'].shape[0]
+    indices = np.random.choice(N, batch_size)
+    states = data['state'][indices]
+    actions = data['action'][indices]
+    return Tensor(np.concatenate((states, actions), axis=-1)).to(device)

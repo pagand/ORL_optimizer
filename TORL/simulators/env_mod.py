@@ -5,9 +5,13 @@ from typing import TypeVar, List, Tuple, Dict, Any
 from torch import Tensor
 from torch.nn.functional import pad
 from torch.distributions import Normal
+import numpy as np
 
 ObsType = TypeVar("ObsType")
 ActType = TypeVar("ActType")
+
+def str_to_floats(data: str) -> np.ndarray:
+    return np.array([float(x) for x in data.split(",")])
 
 class Dynamics(nn.Module):
     '''
@@ -215,9 +219,25 @@ class MyEnv:
         self.dynamics_nn.load_state_dict(checkpoint["dynamics_nn"])
         self.gru_nn.load_state_dict(checkpoint["gru_nn"])
         self.sequence_num = self.config_dict['sequence_num']
+        self.state_mean = Tensor(str_to_floats(self.config_dict['state_mean'])).to(self.device)
+        self.state_std = Tensor(str_to_floats(self.config_dict['state_std'])).to(self.device)
+        self.reward_mean = self.config_dict['reward_mean']
+        self.reward_std = self.config_dict['reward_std']
+
+    def normalize_state(self, state: Tensor) -> Tensor:
+        return (state - self.state_mean) / self.state_std
+    
+    def denormalize_state(self, state: Tensor) -> Tensor:
+        return state * self.state_std + self.state_mean
+    
+    def normalize_reward(self, reward: Tensor) -> Tensor:
+        return (reward - self.reward_mean) / self.reward_std
+    
+    def denormalize_reward(self, reward: Tensor) -> Tensor:
+        return reward * self.reward_std + self.reward_mean
 
     def reset(self, obs: ObsType) -> None:
-        self.states = obs
+        self.states = self.normalize_state(obs)
         self.actions = torch.empty((0, self.action_dim))
         self.rewards = torch.empty((0))
         self.istep = 0
@@ -258,8 +278,10 @@ class MyEnv:
         # (N)
         self.rewards = torch.cat((self.rewards, reward), dim=0)
         self.istep += 1
-        next_state = next_state.detach().cpu()
-        reward = reward.detach().cpu()
+        next_state = next_state.detach()
+        reward = reward.detach()
+        next_state = self.denormalize_state(next_state)
+        reward = self.denormalize_reward(reward)
         done = (self.istep >= self.max_episode_steps)
         return next_state, reward, done
 

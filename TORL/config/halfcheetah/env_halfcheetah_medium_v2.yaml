@@ -5,7 +5,7 @@ dataset_name: halfcheetah-medium-v2
 chkpt_path_nar: TORL/config/halfcheetah/halfcheetah_medium_v2_nar.pt
 chkpt_path_ar: TORL/config/halfcheetah/halfcheetah_medium_v2_ar.pt
 vae_chkpt_path: TORL/config/halfcheetah/halfcheetah_medium_v2_vae.pt
-load_chkpt: false
+load_chkpt: true
 save_chkpt_per: 200
 sequence_num: 3
 out_state_num: 1

@@ -66,7 +66,8 @@ def main(config: Config):
         print("Checkpoint loaded from", chkpt_path)
 
     dynamics_optimizer = torch.optim.Adam(dynamics_nn.parameters(), lr=config.dynamics_lr, weight_decay=config.dynamics_weight_decay)
-    gru_optimizer = torch.optim.Adam(gru.parameters(), lr=config.dynamics_lr, weight_decay=config.dynamics_weight_decay)
+    #gru_optimizer = torch.optim.Adam(gru.parameters(), lr=config.dynamics_lr, weight_decay=config.dynamics_weight_decay)
+    gru_optimizer = torch.optim.Adam(list(dynamics_nn.parameters())+list(gru.parameters()), lr=config.dynamics_lr, weight_decay=config.dynamics_weight_decay)
     criterion = torch.nn.MSELoss()
     #criterion = MeanFourthPowerError()
 
@@ -92,15 +93,16 @@ def main(config: Config):
         dynamics_optimizer.zero_grad()
         next_states_pred, rewards_pred, loss = dynamics_nn(states, actions, next_state=next_states, 
                                                            next_reward=next_rewards, is_eval=False, is_ar=config.is_ar)
-        loss.backward()
-        dynamics_optimizer.step()
+        #loss.backward()
+        #dynamics_optimizer.step()
 
         if config.use_gru_update:
             gru.train()
             gru_optimizer.zero_grad()
             input = torch.cat((states, actions), dim=2)
             input = input[:, :config.sequence_num]
-            pred_features = torch.cat((next_states_pred.detach(), rewards_pred.detach()), dim=2)
+            #pred_features = torch.cat((next_states_pred.detach(), rewards_pred.detach()), dim=2)
+            pred_features = torch.cat((next_states_pred, rewards_pred), dim=2)
             g_pred, loss2 = gru(pred_features, input, next_states, next_rewards)
             #print("g_states_pred", g_pred.shape)
             g_states_pred = g_pred[:, :, :state_dim]

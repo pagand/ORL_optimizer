@@ -77,7 +77,7 @@ def evaluate_simulator(
     returns = []
     for i in trange(num_episodes, desc="Eval Simulator", leave=False):
         obs = init_obs[i:i+1, :]
-        obs = Tensor(obs)
+        obs = Tensor(obs).to(device)
         env.reset(obs)
         done = False
         total_reward = 0.0

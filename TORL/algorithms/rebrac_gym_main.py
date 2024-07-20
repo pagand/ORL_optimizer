@@ -160,6 +160,7 @@ def main(config: Config):
                     config.eval_episodes,
                     seed=config.eval_seed,
                     device=device,
+                    step_limit=config.eval_step_limit
                 )
                 normalized_score = eval_env.get_normalized_score(eval_returns) * 100.0
             else:
@@ -170,6 +171,7 @@ def main(config: Config):
                 config.eval_episodes,
                 init_obs,
                 device,
+                config.eval_step_limit
             )
             sim_normalized_score = eval_env.get_normalized_score(sim_returns) * 100.0
             if config.use_gym_env:

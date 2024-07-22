@@ -403,12 +403,9 @@ def evaluate_model(testloader, model, mode="valid", i=0):
 
 
 
-# model.load_state_dict(torch.load("data/Checkpoints/fcGru/gru_4_checkpoint49.pt", map_location=torch.device("cpu")))
-# gru.load_state_dict(torch.load("data/Checkpoints/fcGru/gru_4_checkpoint49_gru.pt", map_location=torch.device("cpu")))
-
 iter = 14
 iter = iter+1
-criterion = torch.nn.NLLLoss()
+criterion = torch.nn.MSELoss()
 
 print(iter)
 n_epochs = 80

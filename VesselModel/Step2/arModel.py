@@ -301,14 +301,17 @@ def train_model(trainloader, testloader, validloader, model, model_name = "trans
         print('train MSES: {}'.format(train_mse))
         print('train R2s:  {}'.format(train_r2))
         
-        print('test MSES: {}'.format(mse))
-        print('test R2s:  {}'.format(r2))
+        print('valid MSES: {}'.format(mse))
+        print('valid R2s:  {}'.format(r2))
 
         mses.append(mse)
         r2s.append(r2)
         losses.append(epoch_loss)
         train_mses.append(train_mse)
         train_r2s.append(train_r2)
+        wandb.log(
+            {"Epoch": epoch, "Train_Loss": train_mse, "Train_R2": train_r2, "Valid_Loss": mse, "Valid_R2": r2}
+        )
         # if (epoch == best_epoch-1):
         #     print("valid mses: ", mses)
         #     print("valid r2s: ", r2s)
@@ -403,7 +406,7 @@ def evaluate_model(testloader, model, mode="valid", i=0):
 
 
 
-iter = 14
+iter = 15
 iter = iter+1
 criterion = torch.nn.MSELoss()
 
@@ -422,8 +425,16 @@ scheduler2 = optim.lr_scheduler.ReduceLROnPlateau(optimizer2, 'min', factor=0.5,
 model_name = "Model_Iter_{}".format(iter)
 if not os.path.exists("data/Checkpoints/{}".format(model_name)):
     os.makedirs("data/Checkpoints/{}".format(model_name))
-mses, r2s, losses, train_mses, train_r2s, best_epoch = train_model(trainloader, validloader, testloader, model, model_name)
+   
+if not os.path.exists("data/Checkpoints/Best"):
+     os.makedirs("data/Checkpoints/Best")
 
+wandb.login()
+wandb.init(project="trip_loss", name="model_iter_{}".format(iter))
+
+
+mses, r2s, losses, train_mses, train_r2s, best_epoch = train_model(trainloader, validloader, testloader, model, model_name)
+# best_epoch = 54
 
 # test
 
@@ -431,7 +442,7 @@ model.load_state_dict(torch.load("data/Checkpoints/{}/{}_checkpoint{}.pt".format
 gru.load_state_dict(torch.load("data/Checkpoints/{}/{}_checkpoint{}_gru.pt".format(model_name,model_name, best_epoch), map_location=torch.device("cpu")))
 
 test_mses, test_r2s, test_actuals, test_predictions = evaluate_model(testloader, model, mode="test")
-#
+
 
 print("Best epoch at: ", best_epoch, "mse: " ,test_mses, "r2s: ", test_r2s)
 
@@ -445,13 +456,13 @@ def print_plot(best_epoch = 0, t_mses=[], t_r2s=[], v_mses=[],v_r2s=[],t_osses=[
     losses = np.array(t_osses)
     # valid_mses = np.array(valid_mses)
 
-    print("------ Print Info ------")
-    print("train_mses: ", train_mses)
-    print("train_r2s: ", train_r2s)
-    print("validation mses: ", mses)
-    print("validation r2s: ", r2s) 
-    print("epoch losses:", losses)
-    print("best epoch: ", best_epoch, "test mses: ", test_mses, "test r2s: ", test_r2s)
+    # print("------ Print Info ------")
+    # print("train_mses: ", train_mses)
+    # print("train_r2s: ", train_r2s)
+    # print("validation mses: ", mses)
+    # print("validation r2s: ", r2s) 
+    # print("epoch losses:", losses)
+    # print("best epoch: ", best_epoch, "test mses: ", test_mses, "test r2s: ", test_r2s)
 
     # # load state dict
     load_iter = iter
@@ -459,8 +470,7 @@ def print_plot(best_epoch = 0, t_mses=[], t_r2s=[], v_mses=[],v_r2s=[],t_osses=[
 
 
     # print("Load Checkpoint: gru_{}_checkpoint{}".format(load_iter, load_cp))
-    wandb.login()
-    wandb.init(project="trip_loss", name="model_iter_{}".format(load_iter))
+ 
 
 
         
@@ -508,7 +518,7 @@ def print_plot(best_epoch = 0, t_mses=[], t_r2s=[], v_mses=[],v_r2s=[],t_osses=[
     wandb.log({f'Losses_Plot_iter_{load_iter}': wandb.Image("Plot/{}".format(plot_filename))})
 
 
-print_plot(best_epoch, train_mses, train_r2s, mses, r2s, losses)
+# print_plot(best_epoch, train_mses, train_r2s, mses, r2s, losses)
 
 
 

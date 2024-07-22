@@ -8,7 +8,7 @@ from scipy.stats import gaussian_kde
 
 
 # df = pd.read_csv("~/BCFerryData/feature1.csv")
-df = pd.read_csv("data/feature_tmp2.csv")
+df = pd.read_csv("data/Features/feature_tmp2.csv")
 
 
 plt.scatter(df.LONGITUDE, df.LATITUDE, s=1)
@@ -65,7 +65,7 @@ plt.ylabel('Latitude')
 plt.legend()
 plt.show()
 
-
+df = df.drop(["specialPoint","detourTrip"], axis = 1)
 plt.scatter(df[df.trip_id==1049].LONGITUDE,df[df.trip_id==1049].LATITUDE, c = df[df.trip_id==1049].STW, s=1)
 
 def mode_change_inbetween(df, speed_thresh=10):
@@ -107,12 +107,12 @@ def get_adversarial(df):
 adversarial, reroute, reduce_speed = get_adversarial(df)
 df["adversarial"] = df["trip_id"].apply(lambda x: 1 if x in adversarial else 0)
 
-len(adversarial)
-
+len(adversarial) #310 trips
+# len(df.trip_id.unique()) #3129 trips
 samples = reroute
-plt.scatter(df[df.trip_id.isin(samples)].LONGITUDE, df[df.trip_id.isin(samples)].LATITUDE, s=1)
+plt.scatter(df[df.trip_id.isin(samples)].LONGITUDE, df[df.trip_id.isin(samples)].LATITUDE, c = df[df.trip_id.isin(samples)].STW,s=1)
 
-samples = reduce_speed
+samples = adversarial
 plt.scatter(df[df.trip_id.isin(samples)].LONGITUDE, df[df.trip_id.isin(samples)].LATITUDE, c = df[df.trip_id.isin(samples)].STW, s=1)
 
 
@@ -121,8 +121,22 @@ plt.ylabel('Latitude')
 plt.legend()
 plt.show()
 
+#1143,1591,2048,2630
+# print(reroute) #[135, 1032, 1039, 1075, 1101, 1143, 1312, 1591, 1825, 1904, 2048, 2142, 2208, 2399, 2630, 3001, 3216, 3245, 3351, 3373, 3671, 3742]
+# idx = 21
+# print(reroute[idx])
+# id = reroute[idx]
+# plt.scatter(df[df.trip_id==id].LONGITUDE, df[df.trip_id==id].LATITUDE, s=1)
+# plt.xlabel('Longitude')
+# plt.ylabel('Latitude')
+# plt.legend()
+# plt.show()
+# df = df[~df.trip_id.isin(reroute)]
+
+
 # df.to_csv("~/BCFerryData/feature1.csv", index=False)
-df.to_csv("data/feature1.csv", index=False)
+df.to_csv("data/Features/feature1.csv", index=False)
+
 
 
 

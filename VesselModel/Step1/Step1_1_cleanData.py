@@ -5,12 +5,12 @@ import os
 
 
 #file_data = '~/BCFerryData/queenCsvOut.csv'
-file_data = "data/queenCsvOut.csv"
+file_data = "data/Features/queenCsvOut.csv"
 
-# if not os.path.exists(file_data):
-#     print("File not found. PLease put the queenCsvOut in the location: data/queenCsvOut.csv")
-#     exit()
-#df = pd.read_csv('~/BCFerryData/queenCsvOut.csv', skiprows=[1])
+if not os.path.exists(file_data):
+    print("File not found. PLease put the queenCsvOut in the location: data/queenCsvOut.csv")
+    exit()
+# df = pd.read_csv('~/BCFerryData/queenCsvOut.csv', skiprows=[1])
 df = pd.read_csv(file_data, skiprows=[1])
 df
 
@@ -95,10 +95,10 @@ print(df.groupby(df.trip_id).count().head(20).Dati)
 #df[['Dati','Time','LONGITUDE','LATITUDE','SOG','trip_id']].tail(100)
 
 
-#df.to_csv("~/BCFerryData/queenCsvOut_withID.csv", index=False)
-df.to_csv("data/queenCsvOut_withID.csv", index=False)
+# df.to_csv("~/BCFerryData/queenCsvOut_withID.csv", index=False)
+df.to_csv("data/Features/queenCsvOut_withID.csv", index=False)
 # df = pd.read_csv("~/BCFerryData/queenCsvOut_withID.csv")
-df = pd.read_csv("data/queenCsvOut_withID.csv")
+df = pd.read_csv("data/Features/queenCsvOut_withID.csv")
 
 
 # print(df.groupby(df.trip_id).count()) 
@@ -323,10 +323,7 @@ plt.show()
 # pd.set_option('display.width',1000)
 # print(df[[ 'trip_id','Dati','Time','CountDown','LONGITUDE','LATITUDE']].head(315))
 # print(df.columns)
-# df.to_csv('~/BCFerryData/queenCsvOut_cleaned_location_1.csv', index=False)
 
-
-#df.to_csv("../Data/queenCsvOut_cleaned_location.csv", index=False)
 # df.to_csv('~/BCFerryData/queenCsvOut_cleaned_location.csv', index=False)
 
-df.to_csv('data/queenCsvOut_cleaned_location.csv', index=False)
+df.to_csv('data/Features/queenCsvOut_cleaned_location.csv', index=False)

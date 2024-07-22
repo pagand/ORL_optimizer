@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import os
 
 # file_path = "~/BCFerryData/df_naive_impute.csv"
-file_path = "data/feature_tmp1.csv"
+file_path = "data/Features/feature_tmp1.csv"
 # df = pd.read_csv(file_path, skiprows=[1])
 df = pd.read_csv(file_path)
 
@@ -56,10 +56,12 @@ tripSchedule["RoundedDT"] = tripSchedule["departure"].dt.floor('5T')
 tripSchedule["RoundedTime"] = tripSchedule["departure"].dt.floor('5T').dt.time
 # tripSchedule
 
-tripSchedule.to_csv("data/tripSchedule.csv", index=False)
+tripSchedule.to_csv("data/Features/tripSchedule.csv", index=False)
 
 NH_trips = tripSchedule[tripSchedule["direction"] == 'N-H']
 HN_trips = tripSchedule[tripSchedule["direction"] == 'H-N']
+
+
 
 
 
@@ -73,7 +75,7 @@ HN_trips = tripSchedule[tripSchedule["direction"] == 'H-N']
 
 def possibleSchedule(df, thresh=1):
     possibleSchedule = df.groupby(['year','month'])["RoundedTime"].value_counts().reset_index(name = 'count')
-    print(possibleSchedule.head(40))
+    # print(possibleSchedule.head(40))
     possibleSchedule = possibleSchedule[possibleSchedule['count'] > thresh]
     return possibleSchedule
 
@@ -94,9 +96,11 @@ def roundDown(dt, minute = 5):
     return dt.time()
     
 
-def assignNaNSchedule(df, possibleSchedule):
-     df.loc[df.ScheduleTime.isna(), 'RoundedTime'] = df[df.ScheduleTime.isna()]['RoundedDT'].apply(roundDown)
-     df = df.apply(assignSchedule, axsis = 1, possibleSchedule = possibleSchedule)
+# def assignNaNSchedule(df, possibleSchedule):
+#      df.loc[df.ScheduleTime.isna(), 'RoundedTime'] = df[df.ScheduleTime.isna()]['RoundedDT'].apply(roundDown)
+#      df = df.apply(assignSchedule, axis = 1, possibleSchedule = possibleSchedule)
+    
+
 
 
 # Setup for N-H trips
@@ -105,15 +109,19 @@ NH_possibleSchedule = possibleSchedule(NH_trips)
 NH_trips["ScheduleTime"] = NH_trips.apply(assignSchedule, axis = 1, possibleSchedule = NH_possibleSchedule)
 # Set up Schdule if there is only 1 trip departure at the time
 # Round down 5 more minutes and find the schedule
-NH_trips["ScheduleTime"] = NH_trips.apply(assignNaNSchedule, axis = 1, possibleSchedule = NH_possibleSchedule)
+# NH_trips["ScheduleTime"] = NH_trips.apply(assignNaNSchedule, axis = 1, possibleSchedule = NH_possibleSchedule)
+
+NH_trips.loc[NH_trips.ScheduleTime.isna(), 'RoundedTime'] = NH_trips[NH_trips.ScheduleTime.isna()]['RoundedDT'].apply(roundDown)
+NH_trips["ScheduleTime"] = NH_trips.apply(assignSchedule, axis = 1, possibleSchedule = NH_possibleSchedule)
 # Set up Schedule time as rounded departure time
 NH_trips_NaN = NH_trips[NH_trips.ScheduleTime.isna()]
 NH_trips_NaN['ScheduleTime'] = NH_trips_NaN['RoundedDT']
 NH_trips.update(NH_trips_NaN)
-# NH_trips.head(30)
+NH_trips.head(30)
 
 # len(NH_trips[NH_trips["ScheduleTime"].notna()])
-# len(NH_trips[NH_trips["ScheduleTime"].isna()])
+# len(NH_trips[HN_trips["ScheduleTime"].isna()])
+# len(NH_trips)
 
 # Setup for H-N trips
 HN_possibleSchedule = possibleSchedule(HN_trips)
@@ -121,7 +129,10 @@ HN_possibleSchedule = possibleSchedule(HN_trips)
 HN_trips["ScheduleTime"] = HN_trips.apply(assignSchedule, axis = 1, possibleSchedule = HN_possibleSchedule)
 # Set up Schdule if there is only 1 trip departure at the time
 # Round down 5 more minutes and find the schedule
-HN_trips["ScheduleTime"] = HN_trips.apply(assignNaNSchedule, axis = 1, possibleSchedule = HN_possibleSchedule)
+# HN_trips["ScheduleTime"] = HN_trips.apply(assignNaNSchedule, axis = 1, possibleSchedule = HN_possibleSchedule)
+
+HN_trips.loc[HN_trips.ScheduleTime.isna(), 'RoundedTime'] = HN_trips[HN_trips.ScheduleTime.isna()]['RoundedDT'].apply(roundDown)
+HN_trips["ScheduleTime"] = HN_trips.apply(assignSchedule, axis = 1, possibleSchedule = HN_possibleSchedule)
 # Set up Schedule time as rounded departure time
 HN_trips_NaN = HN_trips[HN_trips.ScheduleTime.isna()]
 HN_trips_NaN['ScheduleTime'] = HN_trips_NaN['RoundedDT']
@@ -187,7 +198,7 @@ df["season"] = df['datetime'].apply(lambda x: get_season(x.month))
 df["current"] = df["STW"] - df["SOG"]
 # df.current
 
-df.to_csv('~/BCFerryData/tmp1.csv', index=False)
+# df.to_csv('~/BCFerryData/tmp1.csv', index=False)
 # df = pd.read_csv('~/BCFerryData/tmp1.csv')
 # df = pd.read_csv('~/BCFerryData/queenCsvOut_withID.csv',skiprows=[1])
 
@@ -196,7 +207,7 @@ df.to_csv('~/BCFerryData/tmp1.csv', index=False)
 # weathercode: uses WMO weather codes
 
 
-weather = pd.read_csv(os.getcwd() + "/data/weather.csv")
+weather = pd.read_csv(os.getcwd() + "/data/Features/weather.csv")
 weather.columns = ["time", "pressure", "rain", "snowfall", "weathercode"]
 weather["time"] = pd.to_datetime(weather["time"], format='%Y-%m-%dT%H:%M')
 weather["day"] = weather.time.apply(lambda x: x.date())
@@ -248,7 +259,7 @@ df = df.drop(["date"], axis=1)
 # plt.show()
 
 # df.to_csv("~/BCFerryData/feature1_tmp2.csv", index=False)
-df.to_csv("data/feature1_tmp2.csv", index=False)
+df.to_csv("data/Features/feature1_tmp2.csv", index=False)
 
 # len(df[pd.isna(df)].trip_id) # return 324164
 # df

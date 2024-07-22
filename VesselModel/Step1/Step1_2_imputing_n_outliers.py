@@ -5,7 +5,8 @@ import matplotlib.pyplot as plt
 from pykalman import KalmanFilter
 
 # df = pd.read_csv("~/BCFerryData/queenCsvOut_cleaned_location.csv")
-df = pd.read_csv("~/BCFerryData/queenCsvOut_cleaned_location.csv")
+# df = pd.read_csv("~/BCFerryData/queenCsvOut_cleaned_location.csv")
+df = pd.read_csv("data/Features/queenCsvOut_cleaned_location.csv")
 
 df.drop(["CARGO", "CARGO_PAX", "PAX", 'TRACK_MADE_GOOD', 
         'ENGINE_1_FLOWRATE', 'ENGINE_1_FLOWRATEA', 'ENGINE_1_FLOWRATEB', 'ENGINE_1_FLOWTEMPB',
@@ -54,8 +55,8 @@ df = df[~df['trip_id'].isin(emptyDataTrip.index)]
 # plt.show()
 
 
-df.to_csv("data/df_cleaned_location_1.csv", index=False)
-df = pd.read_csv("data/df_cleaned_location_1.csv")
+df.to_csv("data/Features/df_cleaned_location_1.csv", index=False)
+df = pd.read_csv("data/Features/df_cleaned_location_1.csv")
 
 
 
@@ -132,9 +133,9 @@ upper = q3 + abs(1.5 * IQR)
 print(lower, upper)
 print(df.SOG.min(), df.SOG.max()) #min = 0, max = 21.875
 # SOG = 0 is unreasonable if occured in the middle of trips, will treat these as missing data and will imputing later
+df.loc[df.SOG==0, "SOG"] = np.nan
 
-
-df.to_csv("data/test.csv", index=False)
+# df.to_csv("data/test.csv", index=False)
 # df = pd.read_csv("data/test.csv")
 
 
@@ -180,7 +181,7 @@ lower = q1 - abs(1.5 * IQR)
 upper = q3 + abs(1.5 * IQR)
 print(lower, upper)
 print(df.STW.min(), df.STW.max()) # min = 0, max = 27.72
-
+df.loc[df.STW==0, "STW"] = np.nan
 
 # WIND_SPEED_TRUE
 
@@ -203,13 +204,14 @@ for index in outlier_indexes:
 #df = df.to_csv("../../df_outlier_removed.csv", index=False)
 # df = df.to_csv("~/BCFerryData/df_outlier_removed.csv", index=False)
 # df = pd.read_csv("~/BCFerryData/df_outlier_removed.csv")
-df = df.to_csv("data/df_outlier_removed.csv", index=False)
-df = pd.read_csv("data/df_outlier_removed.csv")
+df.to_csv("data/Features/df_outlier_removed.csv", index=False)
+df = pd.read_csv("data/Features/df_outlier_removed.csv")
 
 
 # df[(df.SOG == 0) & (df.LONGITUDE.isna()) & (df.LATITUDE.isna())][['Dati','Time','LONGITUDE','LATITUDE','SOG','trip_id']]
 # missingSOG = df[(df.SOG == 0) & (df.LONGITUDE.isna()) & (df.LATITUDE.isna())]['trip_id'].unique()
 # missingSOG
+
 
 #### IMPUTING MISSING DATA #####
 
@@ -306,27 +308,51 @@ df.isna().sum()[df.isna().sum()>0]
 # df[(df["LATITUDE"].isna()) & df["SOG"].notna()][["Dati",'Time',"SOG","LONGITUDE","LATITUDE","trip_id"]]
 
 
-def impute_missing_SOG(df, thresh = 10):
-    na_trips = df[df['SOG'] == 0].trip_id.unique()
-    for trip in na_trips:
-        tmp_df = df[(df.trip_id==trip)]
-        start = df[df.trip_id == trip].iloc[0].Time + thresh
-        end = df[df.trip_id == trip].iloc[-1].Time - thresh
-        tmp_df['SOG_differ'] = tmp_df['SOG'].diff(-1).fillna(0)
-        missing =list(tmp_df[
-                        (((tmp_df.SOG_differ.abs() < thresh) |(tmp_df['SOG'] == 0))& 
-                        (tmp_df['Time'] > start) & (tmp_df['Time'] < end))].index)
-        if missing:
-            prev_val = df.loc[missing[0]-1, 'SOG']
-            after_val = df.loc[missing[-1]+1, 'SOG']
-            if len(missing) > 1:
-                impute_diff = (after_val- prev_val)/(len(missing) + 1)
-            else:
-                impute_diff = (after_val- prev_val)/2
-            for i in range(len(missing)):
-                df.loc[missing[i], 'SOG'] = prev_val + impute_diff*(i+1)
+# def impute_missing_SOG(df, thresh = 10):
+#     na_trips = df[df['SOG'] == 0].trip_id.unique()
+#     for trip in na_trips:
+#         tmp_df = df[(df.trip_id==trip)]
+#         start = df[df.trip_id == trip].iloc[0].Time + thresh
+#         end = df[df.trip_id == trip].iloc[-1].Time - thresh
+#         tmp_df['SOG_differ'] = tmp_df['SOG'].diff(-1).fillna(0)
+#         missing =list(tmp_df[
+#                         (((tmp_df.SOG_differ.abs() < thresh) |(tmp_df['SOG'] == 0))& 
+#                         (tmp_df['Time'] > start) & (tmp_df['Time'] < end))].index)
+#         if missing:
+#             prev_val = df.loc[missing[0]-1, 'SOG']
+#             after_val = df.loc[missing[-1]+1, 'SOG']
+#             if len(missing) > 1:
+#                 impute_diff = (after_val- prev_val)/(len(missing) + 1)
+#             else:
+#                 impute_diff = (after_val- prev_val)/2
+#             for i in range(len(missing)):
+#                 df.loc[missing[i], 'SOG'] = prev_val + impute_diff*(i+1)
 
-impute_missing_SOG(df)
+# impute_missing_SOG(df)
+
+
+
+# def impute_missing_STW(df, thresh = 10):
+#     na_trips = df[df['STW'] == 0].trip_id.unique()
+#     for trip in na_trips:
+#         tmp_df = df[(df.trip_id==trip)]
+#         start = df[df.trip_id == trip].iloc[0].Time + thresh
+#         end = df[df.trip_id == trip].iloc[-1].Time - thresh
+#         tmp_df['STW_differ'] = tmp_df['STW'].diff(-1).fillna(0)
+#         missing =list(tmp_df[
+#                         (((tmp_df.STW_differ.abs() < thresh) |(tmp_df['STW'] == 0))& 
+#                         (tmp_df['Time'] > start) & (tmp_df['Time'] < end))].index)
+#         if missing:
+#             prev_val = df.loc[missing[0]-1, 'STW']
+#             after_val = df.loc[missing[-1]+1, 'STW']
+#             if len(missing) > 1:
+#                 impute_diff = (after_val- prev_val)/(len(missing) + 1)
+#             else:
+#                 impute_diff = (after_val- prev_val)/2
+#             for i in range(len(missing)):
+#                 df.loc[missing[i], 'STW'] = prev_val + impute_diff*(i+1)
+
+# impute_missing_STW(df)
 
 # 990. 1591. 3169
 # zeroSOGTrip = df[(df["SOG"] == 0)][['Dati','Time','LONGITUDE','LATITUDE','DEPTH','SOG','trip_id']].trip_id.unique()
@@ -334,7 +360,7 @@ impute_missing_SOG(df)
 
 # Observe that these trips are special, will mark these as adversariel trip later
 
-# id = 1591
+# id = 3742
 # plt.scatter(df[df.trip_id==id].LONGITUDE, df[df.trip_id==id].LATITUDE, s=2, c=df[df.trip_id==id].Time, cmap="BrBG")
 # plt.xlabel('Longitude')
 # plt.ylabel('Latitude')
@@ -363,24 +389,13 @@ impute_missing(df, df.columns)
 
 df.isna().sum()[df.isna().sum()>0]
 
-# add countdown
-# TRIP_DURATION = 100 
-# df["start_time"] = df.groupby("trip_id")['Time'].transform('min')
-# df["CountDown"] = TRIP_DURATION - (df['Time'] - df['start_time'])
-# df.loc[df['trip_id'] == 0, 'CountDown'] = 0
-# df.drop(['start_time'], axis=1, inplace=True)
-
-# df.isna().sum()[df.isna().sum()>0]
 
 
 # df.to_csv('~/BCFerryData/df_naive_impute.csv', index=False)
-df.to_csv('data/df_naive_impute.csv', index=False)
+df.to_csv('data/Features/df_naive_impute.csv', index=False)
 
 
 #pd.set_option('display.max_columns', 100)
-# pd.set_option('display.max_rows', 50)
+# pd.set_option('display.max_rows', 150)
 # pd.set_option('display.width',1000)
 # print(tmp.head(20))
-
-# df[(df.DEPTH.isna())][['Dati','Time','LONGITUDE','LATITUDE','DEPTH','SOG','trip_id']]
-# df[(df.trip_id == 2) & (df.Time >= 230) & (df.Time <= 236)]

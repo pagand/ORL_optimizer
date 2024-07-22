@@ -309,9 +309,15 @@ def train_model(trainloader, testloader, validloader, model, model_name = "trans
         losses.append(epoch_loss)
         train_mses.append(train_mse)
         train_r2s.append(train_r2)
-        wandb.log(
-            {"Epoch": epoch, "Train_Loss": train_mse, "Train_R2": train_r2, "Valid_Loss": mse, "Valid_R2": r2}
-        )
+
+        dict = {"Epoch": epoch}
+        for i in range(4):
+            dict_i = {"Train Loss {}".format(i): train_mses[epoch][i],
+                    "valid loss {}".format(i): mses[epoch][i],
+                    "Train R2 {}".format(i): train_r2s[epoch][i],
+                    "valid R2 {}".format(i): r2s[epoch][i]}
+            dict.update(dict_i)
+        wandb.log(dict)
         # if (epoch == best_epoch-1):
         #     print("valid mses: ", mses)
         #     print("valid r2s: ", r2s)
@@ -433,7 +439,7 @@ wandb.login()
 wandb.init(project="trip_loss", name="model_iter_{}".format(iter))
 
 
-mses, r2s, losses, train_mses, train_r2s, best_epoch = train_model(trainloader, validloader, testloader, model, model_name)
+# mses, r2s, losses, train_mses, train_r2s, best_epoch = train_model(trainloader, validloader, testloader, model, model_name)
 # best_epoch = 54
 
 # test
@@ -441,10 +447,10 @@ mses, r2s, losses, train_mses, train_r2s, best_epoch = train_model(trainloader, 
 model.load_state_dict(torch.load("data/Checkpoints/{}/{}_checkpoint{}.pt".format(model_name,model_name, best_epoch), map_location=torch.device("cpu")))
 gru.load_state_dict(torch.load("data/Checkpoints/{}/{}_checkpoint{}_gru.pt".format(model_name,model_name, best_epoch), map_location=torch.device("cpu")))
 
-test_mses, test_r2s, test_actuals, test_predictions = evaluate_model(testloader, model, mode="test")
+# test_mses, test_r2s, test_actuals, test_predictions = evaluate_model(testloader, model, mode="test")
 
 
-print("Best epoch at: ", best_epoch, "mse: " ,test_mses, "r2s: ", test_r2s)
+# print("Best epoch at: ", best_epoch, "mse: " ,test_mses, "r2s: ", test_r2s)
 
 
 def print_plot(best_epoch = 0, t_mses=[], t_r2s=[], v_mses=[],v_r2s=[],t_osses=[]):

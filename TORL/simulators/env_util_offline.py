@@ -35,6 +35,7 @@ class Config:
     eval_randomize: bool = True
     train_randomize: bool = True
     is_ar: bool = False
+    gamma: float = 0.99
     holdout_per: int = 500
     holdout_num: int = 10
     holdout_randomize: bool = True
@@ -43,6 +44,11 @@ class Config:
     state_std: str = "0.12865594,0.7995007,0.40174076,0.3704901,0.26832765,0.50396156,0.31592974,0.28541404,4.8088756,0.69612664,1.7627896,8.481902,9.107612,6.3224244,10.596246,6.5739717,6.2896786"
     reward_mean: float = 0.0
     reward_std: float = 1.0
+    vae_hidden_dim: int = 1024
+    vae_latent_dim: int = 4
+    vae_num_epochs: int = 200
+    vae_num_updates_per_epoch: int = 200
+    vae_save_chkpt_per: int = 20
 
     def refresh_name(self):
         self.name = f"{self.name}-{self.dataset_name}-{str(uuid.uuid4())[:8]}"

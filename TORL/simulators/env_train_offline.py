@@ -51,8 +51,9 @@ def main(config: Config):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     dynamics_nn = Dynamics(state_dim=state_dim, action_dim=action_dim, hidden_dim=config.hidden_dim,
                             sequence_num=config.sequence_num, out_state_num=config.out_state_num,
-                            future_num=config.future_num, device=device)
-    gru = GRU_update(state_dim+1, state_dim, (state_dim+action_dim)*config.sequence_num, state_dim+1, 1, config.future_num).to(device)
+                            future_num=config.future_num, device=device, train_gamma=config.gamma)
+    gru = GRU_update(state_dim+1, state_dim, (state_dim+action_dim)*config.sequence_num, state_dim+1, 1, config.future_num, 
+                     train_gamma=config.gamma).to(device)
     
     if config.is_ar:
         chkpt_path = config.chkpt_path_ar
@@ -93,9 +94,6 @@ def main(config: Config):
         dynamics_optimizer.zero_grad()
         next_states_pred, rewards_pred, loss = dynamics_nn(states, actions, next_state=next_states, 
                                                            next_reward=next_rewards, is_eval=False, is_ar=config.is_ar)
-        #loss.backward()
-        #dynamics_optimizer.step()
-
         if config.use_gru_update:
             gru.train()
             gru_optimizer.zero_grad()
@@ -111,8 +109,11 @@ def main(config: Config):
             #print("next_states_pred", next_states_pred.shape, "next_states", next_states.shape)
             #loss = criterion(next_states_pred, next_states) + criterion(rewards_pred, rewards)
             loss2.backward()
-
             gru_optimizer.step()
+        else:
+            # only use the dynamics loss
+            loss.backward()
+            dynamics_optimizer.step()
 
         if config.use_gru_update:
             loss_ = loss2.cpu().detach().numpy()

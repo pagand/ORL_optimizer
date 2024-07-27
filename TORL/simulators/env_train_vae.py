@@ -41,7 +41,7 @@ def main(config: Config):
     data_train, data_holdout, *_ = qlearning_dataset2(dsnames, verbose=True)
     state_dim, action_dim = get_env_info(env)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    vae = VAE(input_dim=state_dim+action_dim, latent_dim=32, hidden_dim=256).to(device)
+    vae = VAE(input_dim=state_dim+action_dim, latent_dim=config.vae_latent_dim, hidden_dim=config.vae_hidden_dim).to(device)
     if config.load_chkpt and os.path.exists(config.vae_chkpt_path):
         checkpoint = torch.load(config.vae_chkpt_path)
         vae.load_state_dict(checkpoint["vae"])
@@ -49,24 +49,42 @@ def main(config: Config):
 
     vae_optimizer = torch.optim.Adam(vae.parameters(), lr=1e-4)
 
-    t = trange(config.num_epochs, desc="Training VAE")
+    t = trange(config.vae_num_epochs, desc="Training VAE")
     for epoch in t:
-        samples = get_vae_sample(data_train, 1024, device)
-        vae.train()
-        elbo_loss, *_ = vae(samples)
-        vae_optimizer.zero_grad()
-        elbo_loss.backward()
-        vae_optimizer.step()
-        vae.eval()
-        with torch.no_grad():
-            elbo_values = vae.estimate(samples)
-        threshold = torch.quantile(elbo_values, 0.95)
-        t.set_description(f"EL: {elbo_loss.item():.2f}, PT: {threshold:.2f}")
-        wandb.log({"elbo": elbo_loss.item()})
+        elbo_losses = []
+        thresholds = []
+        elbo_holdout_losses = []
+        for _ in range(config.vae_num_updates_per_epoch):
+            samples = get_vae_sample(data_train, 1024, device)
+            vae.train()
+            elbo_loss, *_ = vae(samples)
+            vae_optimizer.zero_grad()
+            elbo_loss.backward()
+            vae_optimizer.step()
+            elbo_losses.append(elbo_loss.cpu().detach())
+            vae.eval()
+            with torch.no_grad():
+                elbo_values = vae.estimate(samples)
+            threshold = torch.quantile(elbo_values, 0.05)
+            thresholds.append(threshold.cpu().detach())
+            #print("elbo_values", elbo_values)
+            #filtered_samples = samples[elbo_values<threshold]
+            #print("Filtered samples", filtered_samples.shape)
+            hold_out_samples = get_vae_sample(data_holdout, 1024, device)
+            with torch.no_grad():
+                elbo_loss2, *_ = vae(hold_out_samples)
+                elbo_holdout_losses.append(elbo_loss2.cpu().detach())
+        elbo_loss_mean = np.mean(elbo_losses)
+        threshold_mean = np.mean(thresholds)
+        elbo_holdout_loss_mean = np.mean(elbo_holdout_losses)
+        t.set_description(f"EL: {elbo_loss_mean:.2f}, PT: {threshold_mean:.2f}, HL: {elbo_holdout_loss_mean:.2f}")
+        wandb.log({"elbo": elbo_loss_mean, "pt": threshold_mean, "elbo_holdout": elbo_holdout_loss_mean})
     
-        if epoch>0 and config.save_chkpt_per>0 and (epoch % config.save_chkpt_per == 0 or epoch == config.num_epochs-1):
+        if epoch>0 and config.vae_save_chkpt_per>0 and (epoch % config.vae_save_chkpt_per == 0 or epoch == config.vae_num_epochs-1):
             torch.save({
-                "vae": vae.state_dict()
+                "vae": vae.state_dict(),
+                "threshold": threshold_mean,
+                "config": dict_config
             }, config.vae_chkpt_path)
     wandb.finish()
     print("Checkpoint saved to", config.vae_chkpt_path)

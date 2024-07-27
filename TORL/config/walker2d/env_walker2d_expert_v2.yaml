@@ -4,7 +4,7 @@ name: env_train_offline
 dataset_name: walker2d-expert-v2
 chkpt_path_nar: TORL/config/walker2d/walker2d_expert_v2_nar.pt
 chkpt_path_ar: TORL/config/walker2d/walker2d_expert_v2_ar.pt
-load_chkpt: true
+load_chkpt: false
 save_chkpt_per: 200
 sequence_num: 3
 out_state_num: 1

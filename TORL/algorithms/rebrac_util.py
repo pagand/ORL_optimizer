@@ -58,12 +58,16 @@ class Config:
     train_seed: int = 0
     eval_seed: int = 42
     #myenv params
-    chkpt_path: str = "config/halfcheetah_medium_v2_ar.pt"
+    chkpt_path: str = "TORL/config/halfcheetah/halfcheetah_medium_v2_ar.pt"
+    vae_chkpt_path: str = "TORL/config/halfcheetah/halfcheetah_medium_v2_vae.pt"
     use_gym_env: bool = False
     eval_step_limit: int = 100
+    save_chkpt_path: str = "TORL/config/halfcheetah/__tmp__/medium_v2_actor"
+    save_chkpt_per: int = 10
+    sim_kappa: float = 0.01
 
     def refresh_name(self):
-        self.name = f"{self.name}-{self.dataset_name}-{str(uuid.uuid4())[:8]}"
+        self.name = f"{self.name}-{self.dataset_name}-{str(uuid.uuid4())[:4]}"
 
 
 def make_env(env_name: str, seed: int) -> gym.Env:

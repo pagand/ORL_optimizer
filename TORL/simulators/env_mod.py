@@ -141,20 +141,23 @@ class GRU_update(nn.Module):
 class VAE(nn.Module):
     def __init__(self, input_dim, latent_dim, hidden_dim):
         super(VAE, self).__init__()
-        self.encoder = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, latent_dim * 2)  # for mean and log-variance
-        )
-        self.decoder = nn.Sequential(
-            nn.Linear(latent_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, input_dim)
-        )
+        enc = []
+        enc.append(nn.Linear(input_dim, hidden_dim))
+        enc.append(nn.ReLU())
+        for _ in range(3):
+            enc.append(nn.Linear(hidden_dim, hidden_dim))
+            enc.append(nn.ReLU())
+        enc.append(nn.Linear(hidden_dim, latent_dim * 2))
+        self.encoder = nn.Sequential(*enc)
+
+        dec = []
+        dec.append(nn.Linear(latent_dim, hidden_dim))
+        dec.append(nn.ReLU())
+        for _ in range(3):
+            dec.append(nn.Linear(hidden_dim, hidden_dim))
+            dec.append(nn.ReLU())
+        dec.append(nn.Linear(hidden_dim, input_dim))
+        self.decoder = nn.Sequential(*dec)
     
     def forward(self, x):
         h = self.encoder(x)
@@ -163,20 +166,29 @@ class VAE(nn.Module):
         std = torch.exp(0.5 * log_var)
         eps = torch.randn_like(std)
         z = mean + eps * std
+        #print("z", z.shape, z)
         recon_x = self.decoder(z)
         recon_loss = nn.functional.mse_loss(recon_x, x, reduction='sum')
         kld_loss = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
+        #print("recon_loss", recon_loss, "kld_loss", kld_loss)
         elbo_loss =  recon_loss + kld_loss   
         return elbo_loss, recon_x, mean, log_var
     
     def estimate(self, x):
+        # Encode the input
         h = self.encoder(x)
+        # Split the encoded representation into mean and log variance
         mean, log_var = torch.chunk(h, 2, dim=-1)
+        # Compute the standard deviation from the log variance
         std = torch.exp(0.5 * log_var)
-        p_z = Normal(0, 1).log_prob(mean).sum(dim=-1) - log_var.sum(dim=-1)
+        # Compute the KL divergence
+        kl_div = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp(), dim=-1)
+        # Decode the mean of the latent variables to reconstruct the input
         recon_x = self.decoder(mean)
-        p_x_given_z = -nn.functional.mse_loss(recon_x, x, reduction='none').sum(dim=-1)
-        elbo = p_x_given_z + p_z
+        # Compute the negative reconstruction loss using MSE
+        p_x_given_z = nn.functional.mse_loss(recon_x, x, reduction='none').sum(dim=-1)
+        # Compute the ELBO by combining the reconstruction loss and the KL divergence
+        elbo = p_x_given_z + kl_div
         return elbo
 
 class MyEnv:
@@ -199,12 +211,14 @@ class MyEnv:
     istep: int = 0
 
     def __init__(self, chkpt_path: str, state_dim: int, action_dim: int, 
-                 device: torch.device, max_episode_steps: int = 980):
+                 device: torch.device, max_episode_steps: int = 980, vae_chkpt_path: str = None, kappa = 0.01):
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.max_episode_steps = max_episode_steps
         self.device = device
         self.load_from_chkpt(chkpt_path)
+        self.load_vae_from_chkpt(vae_chkpt_path)
+        self.kappa = kappa
         self.dynamics_nn.to(device)
 
     def load_from_chkpt(self, chk_path: str) -> None:
@@ -220,9 +234,19 @@ class MyEnv:
         self.gru_nn.load_state_dict(checkpoint["gru_nn"])
         self.sequence_num = self.config_dict['sequence_num']
         self.state_mean = Tensor(str_to_floats(self.config_dict['state_mean'])).to(self.device)
+        #print("state_mean", self.state_mean)
         self.state_std = Tensor(str_to_floats(self.config_dict['state_std'])).to(self.device)
         self.reward_mean = self.config_dict['reward_mean']
         self.reward_std = self.config_dict['reward_std']
+
+    def load_vae_from_chkpt(self, chk_path: str) -> None:
+        checkpoint = torch.load(chk_path)
+        self.threshold = checkpoint["threshold"]
+        self.vae_config = checkpoint["config"]        
+        self.vae = VAE(self.state_dim+self.action_dim, self.vae_config["vae_latent_dim"], self.vae_config['vae_hidden_dim'])
+        self.vae.load_state_dict(checkpoint["vae"])
+        self.vae.to(self.device)
+
 
     def normalize_state(self, state: Tensor) -> Tensor:
         return (state - self.state_mean) / self.state_std
@@ -270,6 +294,9 @@ class MyEnv:
             next_state = next_state.squeeze(1)
             reward = reward.squeeze(1)
 
+        with torch.inference_mode():
+            elbo = self.vae.estimate(torch.cat((self.states[-1].unsqueeze(0), self.actions[-1].unsqueeze(0)), dim=1))
+
         #print("next_state", next_state.shape, "reward", reward.shape)
         #print("self.states", self.states.shape, "self.actions", self.actions.shape, "self.rewards", self.rewards.shape)
 
@@ -283,23 +310,33 @@ class MyEnv:
         next_state = self.denormalize_state(next_state)
         reward = self.denormalize_reward(reward)
         done = (self.istep >= self.max_episode_steps)
-        return next_state, reward, done
+        elbo = elbo.detach()
+        #print("threshold", self.threshold)
+        prob = Tensor([1/(1+self.kappa*(e-self.threshold)) if e > self.threshold else 1 for e in elbo]).to(self.device)
+        discounted_reward = reward * prob
+        #print("next_state", next_state, "reward", reward, "done", done, "prob", prob, "elbo", elbo, "discounted_reward", discounted_reward)
+                                                                                                                                                                                                                                                                         
+        return next_state, reward, done, prob, elbo, discounted_reward                                                                                                                                                                                                                 
 
 def main():
-    chkpt_path = "TORL/config/halfcheeth/halfcheetah_medium_v2_ar.pt"
+    chkpt_path = "/home/james/sfu/ORL_optimizer/TORL/config/halfcheetah/halfcheetah_medium_v2_ar.pt"
+    vae_chkpt_path = "/home/james/sfu/ORL_optimizer/TORL/config/halfcheetah/halfcheetah_medium_v2_vae.pt"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    env = MyEnv(chkpt_path, 17, 6, device)
-    obs = torch.randn(1, 17)
-    print("init state", obs.numpy())
+    env = MyEnv(chkpt_path, 17, 6, device, vae_chkpt_path=vae_chkpt_path)
+    obs = torch.randn(1, 17).to(device)
+    print("init state", obs.cpu().numpy())
     env.reset(obs)
     for i in range(10):
-        action = torch.randn(1, 6)
-        next_state, reward, done = env.step(action)
+        action = torch.randn(1, 6).to(device)
+        next_state, reward, done, prob, elbo, discounted_reward = env.step(action)
         print("step", i+1)
-        print("action", action.numpy())
-        print("next_state", next_state.numpy())
-        print("reward", reward.numpy())
+        print("action", action.cpu().numpy())
+        print("next_state", next_state.cpu().numpy())
+        print("reward", reward.cpu().numpy())
         print("done", done)
+        print("prob", prob.cpu().numpy())
+        print("elbo", elbo.cpu().numpy())
+        print("discounted_reward", discounted_reward.cpu().numpy())
 
 if __name__ == "__main__":
     main()

@@ -79,6 +79,7 @@ class Critic(nn.Module):
         layers.append(nn.ReLU())
         if layernorm:
             layers.append(nn.LayerNorm(hidden_dim, eps=1e-6))
+            #layers.append(JLayerNorm(hidden_dim))
         
         # Hidden layers
         for _ in range(n_hiddens - 1):
@@ -89,6 +90,7 @@ class Critic(nn.Module):
             layers.append(nn.ReLU())
             if layernorm:
                 layers.append(nn.LayerNorm(hidden_dim, eps=1e-6))
+                #layers.append(JLayerNorm(hidden_dim))
         
         # Output layer
         ll = nn.Linear(hidden_dim, 1)

@@ -1,6 +1,6 @@
 ## Usage
 
-cd sfu/ORL_optimizer # change this to your own ORL_optimizer folder
+cd ORL_optimizer 
 
 then run
 

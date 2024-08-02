@@ -2,9 +2,9 @@ project: ORL_optimizer
 group: env
 name: env_train_offline
 dataset_name: hopper-medium-v2
-chkpt_path_nar: TORL/config/hopper/hopper_medium_v2_nar.pt
-chkpt_path_ar: TORL/config/hopper/hopper_medium_v2_ar.pt
-vae_chkpt_path: TORL/config/hopper/hopper_medium_v2_vae.pt
+chkpt_path_nar: MBORL/config/hopper/hopper_medium_v2_nar.pt
+chkpt_path_ar: MBORL/config/hopper/hopper_medium_v2_ar.pt
+vae_chkpt_path: MBORL/config/hopper/hopper_medium_v2_vae.pt
 load_chkpt: false
 save_chkpt_per: 200
 sequence_num: 3

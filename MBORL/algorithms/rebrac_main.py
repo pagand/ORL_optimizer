@@ -37,7 +37,7 @@ def get_rsquare(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     ss_res = np.sum((y_true-y_pred)**2)
     return 1 - ss_res/ss_tot
 
-@pyrallis.wrap(config_path="TORL/config/hopper/rebrac_hopper_medium_v2.yaml")
+@pyrallis.wrap(config_path="MBORL/config/hopper/rebrac_hopper_medium_v2.yaml")
 def main(config: Config):
 
     #config.name = "rebrac_gym_main"

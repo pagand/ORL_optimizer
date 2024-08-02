@@ -131,6 +131,8 @@ def main(config: Config):
                 config.eval_episodes,
                 init_obs,
                 steps,
+                config.sim_reward_min,
+                config.sim_reward_max,
                 device,
                 config.eval_step_limit
             )
@@ -185,6 +187,8 @@ def main(config: Config):
                 config.augment_episode,
                 init_obs,
                 steps,
+                config.sim_reward_min,
+                config.sim_reward_max,
                 config.reward_penalize,
                 config.sensitivity_threshold,
                 device,

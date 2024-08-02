@@ -65,6 +65,8 @@ class Config:
     save_chkpt_path: str 
     save_chkpt_per: int
     sim_kappa: float
+    sim_reward_min: float
+    sim_reward_max: float
     replay_buffer_size: int
     use_augment_data: bool 
     augment_per: int 

@@ -81,6 +81,8 @@ def evaluate_simulator(
     num_episodes: int,
     init_obs: np.ndarray,
     steps: np.ndarray,
+    sim_reward_min: float,
+    sim_reward_max: float,
     device: torch.device,
     step_limit: int = 1e8
 ):
@@ -109,7 +111,7 @@ def evaluate_simulator(
                 step+=1
                 
                 #print("sim reward", reward, "total_reward", total_reward, "step", step, "done", done)   
-            if not np.isnan(total_reward) and abs(total_reward) < 1e6:
+            if not np.isnan(total_reward) and total_reward >= sim_reward_min and total_reward <= sim_reward_max:
                 returns.append(total_reward)
                 #elbos.append(total_elbo)
                 
@@ -126,6 +128,8 @@ def augment_replay_buffer(
     num_episodes: int,
     init_obs: np.ndarray,
     steps: np.ndarray,
+    sim_reward_min: float,
+    sim_reward_max: float,    
     reward_penalize: bool,
     sensitivity_threshold: float,
     device: torch.device,
@@ -170,7 +174,7 @@ def augment_replay_buffer(
                 step+=1
                 
                 #print("sim reward", reward, "total_reward", total_reward, "step", step, "done", done)   
-            if np.isnan(total_reward) or abs(total_reward) > 1e6:
+            if np.isnan(total_reward) or total_reward < sim_reward_min or total_reward > sim_reward_max:
                 continue
             returns.append(total_reward)
             # add to replay buffer

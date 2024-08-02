@@ -23,6 +23,7 @@ def main(config: Config):
     dict_config = asdict(config)
     dict_config["mlc_job_name"] = os.environ.get("PLATFORM_JOB_NAME")
     np.random.seed(config.eval_seed)
+    torch.manual_seed(config.eval_seed)
     wandb.init(
         config=dict_config,
         project=config.project,
@@ -44,7 +45,7 @@ def main(config: Config):
     else:
         chkpt_path = config.chkpt_path_nar
     if os.path.exists(chkpt_path):
-        checkpoint = torch.load(chkpt_path)
+        checkpoint = torch.load(chkpt_path, map_location=device)
         dynamics_nn.load_state_dict(checkpoint["dynamics_nn"])
         config_dict = checkpoint["config"]
         print("Checkpoint loaded from", chkpt_path)

@@ -16,17 +16,18 @@ def update_actor(
 ):
     actor_model = actor.get_model()
     actor_model.train()
+    # action (batch_size, action_dim)
     action = actor_model(batch["state"])
+    # bc_penalty (batch_size,)
     bc_penalty = ((action - batch["action"]) ** 2).sum(-1)
-    
-    lmbda = 1
     critic_model = critic.get_model()
-    q_values = critic_model(batch["state"], action)
-
-    with torch.no_grad():
-        q_value_min = q_values.min(0).values
-        if normalize_q:
-            lmbda = 1 / (torch.abs(q_value_min).mean())
+    # q_values (batch_size,)
+    q_values = critic_model(batch["state"], action).min(0)[0]
+    
+    lmbda_ = 1
+    if normalize_q:
+        lmbda_ = 1 / (torch.abs(q_values).mean())
+        lmbda = lmbda_.detach()
     
     loss = (beta * bc_penalty - lmbda * q_values).mean()
 
@@ -57,23 +58,26 @@ def update_critic(
     policy_noise: float = 0.2,
     noise_clip: float = 0.5,
 ):
-    with torch.no_grad():
-        next_action = actor.get_target_model()(batch["next_state"])
+    # get target_q
+    with torch.inference_mode():
+        actor_target = actor.get_target_model()
+        critic_target = critic.get_target_model()
+        actor_target.eval()
+        critic_target.eval()
+        next_action = actor_target(batch["next_state"])
         #print("next_action", next_action)
-        noise = torch.randn_like(next_action) * policy_noise
-        noise = noise.clamp(-noise_clip, noise_clip)
+        noise_ = torch.randn_like(next_action) * policy_noise
+        noise = noise_.clamp(-noise_clip, noise_clip)
         next_action = (next_action + noise).clamp(-1, 1)
         #print("next_action", next_action.shape, "batch[next_action]", batch["next_action"].shape)
         #bc_penalty = ((next_action - batch["next_action"]) ** 2).sum(-1)
         #c_penalty = torch.abs(act_diff).sum(1).mean()
-        bc_penalty = torch.square(next_action - batch["next_action"]).sum(-1)
+        bc_penalty = ((next_action - batch["next_action"]) ** 2).sum(-1)
         #print("bc_penalty", bc_penalty.shape)
         #print("critic target model", critic.get_target_model())
-        next_q = critic.get_target_model()(batch["next_state"], next_action).min(0).values
-        next_q = next_q - beta * bc_penalty
+        next_q = critic_target(batch["next_state"], next_action).min(0)[0] - beta * bc_penalty
         #print("next_q - beta * bc_penalty", next_q)
-        target_q = batch["reward"] + (1 - batch["done"]) * gamma * next_q
-        target_q = target_q
+        target_q = (batch["reward"] + (1 - batch["done"]) * gamma * next_q)
         #print("target_q", target_q)
         #print("target_q", target_q)
     
@@ -81,13 +85,14 @@ def update_critic(
     critic_model.train()
 
     q = critic_model(batch["state"], batch["action"])
-    q_min = q.min(0).values.mean()
-    # print("q.shape", q.shape, "target_q.shape", target_q.shape)
-    loss = ((q - target_q) ** 2).mean(1).sum(0)
+    q_min = q.min(0)[0].mean()
+    # q (2, 1024) target_q (1024)
+    loss = ((q - target_q.unsqueeze(0)) ** 2).mean(1).sum(0)
         
     critic.get_optimizer().zero_grad()
     loss.backward()
     critic.get_optimizer().step()
+
     loss = loss.detach().cpu()
     qmin = q_min.detach().cpu()
     metrics.update({"critic_loss": loss, "qmin": qmin})

@@ -22,6 +22,8 @@ import sys
 import os
 
 from sklearn.metrics import r2_score
+from rebrac_eval import evaluate, evaluate_simulator, augment_replay_buffer
+from replay_buffer import ReplayBuffer
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
@@ -36,61 +38,10 @@ def get_rsquare(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     ss_res = np.sum((y_true-y_pred)**2)
     return 1 - ss_res/ss_tot
 
-def evaluate(
-    env: gym.Env,
-    actor: nn.Module,
-    num_episodes: int,
-    seed: int,
-    device: torch.device
-):
-    env.seed(seed)
-    env.action_space.seed(seed)
-    env.observation_space.seed(seed)
-
-    returns = []
-    init_obs = []
-    for _ in trange(num_episodes, desc="Eval Gym", leave=False):
-        obs, done = env.reset(), False
-        init_obs.append(obs)
-        total_reward = 0.0
-        while not done:
-            obs = torch.tensor(obs, dtype=torch.float32).to(device)
-            with torch.no_grad():
-                action = actor(obs).detach().cpu().numpy()
-            obs, reward, done, _ = env.step(action)
-            total_reward += reward
-        returns.append(total_reward)
-    init_obs = np.array(init_obs)
-    return np.array(returns), init_obs
-
-def evaluate_simulator(
-    env: env_mod.MyEnv,
-    actor: nn.Module,
-    num_episodes: int,
-    init_obs: np.ndarray,
-    device: torch.device
-):
-    returns = []
-    for i in trange(num_episodes, desc="Eval Simulator", leave=False):
-        obs = init_obs[i:i+1, :]
-        obs = Tensor(obs)
-        env.reset(obs)
-        done = False
-        total_reward = 0.0
-        while not done:
-            obs = obs.to(device)
-            with torch.no_grad():
-                action = actor(obs).detach()
-            obs, reward, done = env.step(action)
-            total_reward += float(reward)
-            #print("reward", reward, "total_reward", total_reward)
-        returns.append(total_reward)
-    return np.array(returns)
-
 @pyrallis.wrap()
 def main(config: Config):
 
-    config.name = "rebrac_gym_main"
+    #config.name = "rebrac_gym_main"
     config.refresh_name()
     dict_config = asdict(config)
 
@@ -109,9 +60,11 @@ def main(config: Config):
     eval_env = make_env(config.dataset_name, config.eval_seed)
     state_dim, action_dim = get_env_info(env)
 
-    myenv = env_mod.MyEnv(config.chkpt_path, state_dim, action_dim, device, eval_env._max_episode_steps)
+    myenv = env_mod.MyEnv(config.chkpt_path, state_dim, action_dim, device, config.eval_step_limit, 
+                          vae_chkpt_path=config.vae_chkpt_path, kappa=config.sim_kappa)
 
     dataset = get_d4rl_dataset(env)
+    rbuffer = ReplayBuffer(state_dim, action_dim, config.replay_buffer_size, dataset, device)
     actor = DetActor(state_dim=state_dim, action_dim=action_dim, 
                      hidden_dim=config.hidden_dim, layernorm=config.actor_ln, 
                      n_hiddens=config.actor_n_hiddens)
@@ -132,9 +85,12 @@ def main(config: Config):
     t = trange(config.num_epochs, desc="Training")
     sim_rewards = []
     gym_rewards = []
+    init_obs = np.random.uniform(-1, 1, (config.eval_episodes, state_dim))            
+    steps = np.ones(config.eval_episodes) * config.eval_step_limit    
     for epoch in t:
         for i in range(config.num_updates_on_epoch):
-            batch = sample_batch_d4rl(dataset, config.batch_size, randomize=False, device=device)
+            #batch = sample_batch_d4rl(dataset, config.batch_size, randomize=False, device=device)
+            batch = rbuffer.sample(config.batch_size)
             update_critic(actor_state, critic_state, batch, metrics,
                             config.gamma, config.critic_bc_coef, config.tau, 
                             config.policy_noise, config.noise_clip)            
@@ -146,32 +102,45 @@ def main(config: Config):
         logs = {k: v for k, v in mean_metrics.items()}
         wandb.log(logs)
         metrics.reset()
+        '''
+        # save checkpoints
+        if epoch % config.save_chkpt_per == 0 or epoch == config.num_epochs - 1:
+            torch.save({
+                "actor": actor_state.get_model().state_dict(),
+                "config": dict_config}, f"{config.save_chkpt_path}_{epoch}.pt")
+        '''
+
+        # evaluations
         if epoch % config.eval_every == 0 or epoch == config.num_epochs - 1:
             if config.use_gym_env:
-                eval_returns, init_obs = evaluate(
+                eval_returns, init_obs, steps = evaluate(
                     eval_env,
                     actor_state.get_model(),
                     config.eval_episodes,
                     seed=config.eval_seed,
-                    device=device
+                    device=device,
+                    step_limit=config.eval_step_limit
                 )
                 normalized_score = eval_env.get_normalized_score(eval_returns) * 100.0
-            else:
-                init_obs = np.random.uniform(-1, 1, (config.eval_episodes, state_dim))            
+
             sim_returns = evaluate_simulator(
                 myenv,
                 actor_state.get_model(),
                 config.eval_episodes,
                 init_obs,
-                device
+                steps,
+                device,
+                config.eval_step_limit
             )
             sim_normalized_score = eval_env.get_normalized_score(sim_returns) * 100.0
+
+
             if config.use_gym_env:
                 sim_rewards.append(np.mean(sim_returns))
                 gym_rewards.append(np.mean(eval_returns))      
                 rsqr = 0.0
-                if len(sim_rewards) > 1:
-                    rsqr = r2_score(sim_rewards, gym_rewards)            
+                #if len(sim_rewards) > 1:
+                #    rsqr = r2_score(sim_rewards, gym_rewards)            
                 wandb.log(
                     {
                         "epoch": epoch,
@@ -183,7 +152,7 @@ def main(config: Config):
                         "eval/sim_return_std": np.std(sim_returns),
                         "eval/sim_normalized_score_mean": np.mean(sim_normalized_score),
                         "eval/sim_normalized_score_std": np.std(sim_normalized_score),
-                        "eval/sim_gym_rsqr": rsqr,
+                        #"eval/sim_gym_rsqr": rsqr,
                     }
                 )              
                 t.set_postfix(
@@ -205,7 +174,21 @@ def main(config: Config):
                 {
                     "SM": np.mean(sim_returns),
                 })
-  
+        # augment data
+        if config.use_augment_data and epoch % config.augment_per == 0 and epoch > 0:
+            returns = augment_replay_buffer(
+                rbuffer,
+                myenv,
+                actor_state.get_model(),
+                config.augment_episode,
+                init_obs,
+                steps,
+                config.reward_penalize,
+                config.sensitivity_threshold,
+                device,
+                step_limit=config.eval_step_limit
+            )        
+
 
 if __name__ == "__main__":
     main()

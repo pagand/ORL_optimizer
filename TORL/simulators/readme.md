@@ -1,13 +1,13 @@
-# Usage
+## Usage
 
-cd cd sfu/ORL_optimizer # change this to your own ORL_optimizer folder
+cd sfu/ORL_optimizer # change this to your own ORL_optimizer folder
 
 then run
 
-python ./TORL/simulators/env_plot.py --config ./TORL/config/envplot_halfcheetah_medium_v2.yaml
+python TORL/simulators/env_plot.py --config TORL/config/hopper/env_hopper_medium_v2.yaml
 
 
-# Files
+## Files
 
 env_mod.py
 

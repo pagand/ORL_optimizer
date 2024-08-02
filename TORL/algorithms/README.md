@@ -1,11 +1,13 @@
-# Usage
+## Usage
+
 cd sfu/ORL_optimizer  #replace with your own ORL_optimizer folder
 
-To evaluate with the gym environment: 
+To evaluate with myenv simulator and the gym environment with Rebrac:
 
-python ./TORL/algorithms/rebrac_gym_main.py --config ./TORL/config/rebrac_halfcheetah_medium_v2.yaml
+python3 TORL/algorithms/rebrac_gym_main.py --config TORL/config/hopper/rebrac_hopper_medium_v2.yaml
 
-# FILES
+## FILES
+
 rebrac_gym_main.py
 
 training and evaluation
@@ -21,3 +23,7 @@ update actor and critic routines
 rebrac_util.py
 
 config and other utilities
+
+rebrac_eval.py
+
+evaluation for myenv simulator and gym

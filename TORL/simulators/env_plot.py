@@ -77,7 +77,7 @@ def main(config: Config):
                             future_num=config.future_num, device=device)
     gru_nn = GRU_update(state_dim+1, state_dim, (state_dim+action_dim)*config.sequence_num, state_dim+1, 1, config.future_num)
     if os.path.exists(config.chkpt_path_nar):
-        checkpoint = torch.load(config.chkpt_path_nar)
+        checkpoint = torch.load(config.chkpt_path_nar, map_location=device)
         dynamics_nn.load_state_dict(checkpoint["dynamics_nn"])
         gru_nn.load_state_dict(checkpoint["gru_nn"])
         config_dict = checkpoint["config"]
@@ -160,7 +160,7 @@ def main(config: Config):
                             future_num=config.future_num, device=device)
     gru_nn = GRU_update(state_dim+1, state_dim, (state_dim+action_dim)*config.sequence_num, state_dim+1, 1, config.future_num)
     if os.path.exists(config.chkpt_path_ar):
-        checkpoint = torch.load(config.chkpt_path_ar)
+        checkpoint = torch.load(config.chkpt_path_ar, map_location=device)
         dynamics_nn.load_state_dict(checkpoint["dynamics_nn"])
         gru_nn.load_state_dict(checkpoint["gru_nn"])
         config_dict = checkpoint["config"]

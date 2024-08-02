@@ -43,7 +43,7 @@ def main(config: Config):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     vae = VAE(input_dim=state_dim+action_dim, latent_dim=config.vae_latent_dim, hidden_dim=config.vae_hidden_dim).to(device)
     if config.load_chkpt and os.path.exists(config.vae_chkpt_path):
-        checkpoint = torch.load(config.vae_chkpt_path)
+        checkpoint = torch.load(config.vae_chkpt_path, map_location=device)
         vae.load_state_dict(checkpoint["vae"])
         print("Checkpoint loaded from", config.vae_chkpt_path)
 

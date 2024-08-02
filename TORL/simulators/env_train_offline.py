@@ -60,7 +60,7 @@ def main(config: Config):
     else:
         chkpt_path = config.chkpt_path_nar
     if config.load_chkpt and os.path.exists(chkpt_path):
-        checkpoint = torch.load(chkpt_path)
+        checkpoint = torch.load(chkpt_path, map_location=device)
         dynamics_nn.load_state_dict(checkpoint["dynamics_nn"])
         gru.load_state_dict(checkpoint["gru_nn"])
         config_dict = checkpoint["config"]

@@ -90,7 +90,9 @@ class Dynamics(nn.Module):
         return (s_, r_)
     
 class GRU_update(nn.Module):
-    def __init__(self, input_size, state_dim, hidden_size=1, output_size=4, num_layers=1, prediction_horizon=5, device="cuda", train_gamma=0.99):
+    def __init__(self, input_size, state_dim, hidden_size=1, output_size=4, num_layers=1, prediction_horizon=5, 
+                 device="cuda" if torch.cuda.is_available() else "cpu",
+                 train_gamma=0.99):
         super().__init__()
         future_num = prediction_horizon
         self.state_dim = state_dim
@@ -258,7 +260,7 @@ class MyEnv:
         self.x = 0
 
     def load_from_chkpt(self, chk_path: str) -> None:
-        checkpoint = torch.load(chk_path)
+        checkpoint = torch.load(chk_path, map_location=self.device)
         self.config_dict = checkpoint['config']
         self.dynamics_nn = Dynamics(self.state_dim, self.action_dim,
                                     self.config_dict['hidden_dim'], self.config_dict['sequence_num'], 
@@ -276,7 +278,7 @@ class MyEnv:
         self.reward_std = self.config_dict['reward_std']
 
     def load_vae_from_chkpt(self, chk_path: str) -> None:
-        checkpoint = torch.load(chk_path)
+        checkpoint = torch.load(chk_path, map_location=self.device)
         self.threshold = checkpoint["threshold"]
         self.vae_config = checkpoint["config"]        
         self.vae = VAE(self.state_dim+self.action_dim, self.vae_config["vae_latent_dim"], self.vae_config['vae_hidden_dim'])

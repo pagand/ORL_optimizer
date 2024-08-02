@@ -1,4 +1,5 @@
-TORL/tmp/
+TORL/config/halfcheetah/
+TORL/config/walker2d/
 
 .idea/
 Material/

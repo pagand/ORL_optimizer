@@ -84,17 +84,6 @@ class ReplayBuffer:
             "done": dones.squeeze(-1),
         }
     
-    def get_one_d4rl(self):
-        rnd_idx = np.random.randint(0, self._d4rl_size)
-        dones = self._dones[rnd_idx]
-        start = rnd_idx
-        while start >= 0 and dones[start] == 0:
-            start -= 1
-        start += 1
-        end = rnd_idx
-        while end < self._d4rl_size and dones[end] == 0:
-            end += 1
-        return self._states[start], end - start
 
 
     def add_transition_np(

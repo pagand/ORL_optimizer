@@ -1,8 +1,7 @@
-from rebrac_mod import DetActor, Critic, EnsembleCritic, TrainState
-
+from rebrac_model import DetActor, Critic, EnsembleCritic, TrainState
 from rebrac_util import make_env, get_env_info, get_d4rl_dataset, sample_batch_d4rl, Config, Metrics
 
-from rebrac_update import update_actor, update_critic
+from rebrac_update import update_actor, update_critic 
 
 from typing import Dict, Tuple
 import wandb
@@ -28,7 +27,7 @@ from replay_buffer import ReplayBuffer
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 
-from simulators import env_mod
+from simulators import env_model
 
 def get_rsquare(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     y_true = y_true.flatten()
@@ -38,7 +37,7 @@ def get_rsquare(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     ss_res = np.sum((y_true-y_pred)**2)
     return 1 - ss_res/ss_tot
 
-@pyrallis.wrap()
+@pyrallis.wrap(config_path="TORL/config/hopper/rebrac_hopper_medium_v2.yaml")
 def main(config: Config):
 
     #config.name = "rebrac_gym_main"
@@ -56,14 +55,17 @@ def main(config: Config):
     )
     wandb.mark_preempting()
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    # get basic info about the environment
     env = make_env(config.dataset_name, config.train_seed)
     eval_env = make_env(config.dataset_name, config.eval_seed)
     state_dim, action_dim = get_env_info(env)
 
-    myenv = env_mod.MyEnv(config.chkpt_path, state_dim, action_dim, device, config.eval_step_limit, 
+    # simulated environment
+    myenv = env_model.MyEnv(config.chkpt_path, state_dim, action_dim, device, config.eval_step_limit, 
                           vae_chkpt_path=config.vae_chkpt_path, kappa=config.sim_kappa)
 
     dataset = get_d4rl_dataset(env)
+    # augmented or pure replay buiffer use_augment_date to false for pure replay buffer
     rbuffer = ReplayBuffer(state_dim, action_dim, config.replay_buffer_size, dataset, device)
     actor = DetActor(state_dim=state_dim, action_dim=action_dim, 
                      hidden_dim=config.hidden_dim, layernorm=config.actor_ln, 

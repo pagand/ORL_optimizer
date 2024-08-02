@@ -1,4 +1,4 @@
-from rebrac_mod import DetActor, Critic, EnsembleCritic, TrainState
+from rebrac_model import DetActor, Critic, EnsembleCritic, TrainState
 from rebrac_util import make_env, get_env_info, get_d4rl_dataset, sample_batch_d4rl, Config, Metrics
 
 from typing import Dict, Tuple

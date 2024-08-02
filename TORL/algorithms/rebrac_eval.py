@@ -1,4 +1,4 @@
-from rebrac_mod import DetActor, Critic, EnsembleCritic, TrainState
+from rebrac_model import DetActor, Critic, EnsembleCritic, TrainState
 
 from rebrac_util import make_env, get_env_info, get_d4rl_dataset, sample_batch_d4rl, Config, Metrics
 
@@ -27,7 +27,7 @@ from replay_buffer import ReplayBuffer
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 
-from simulators import env_mod
+from simulators import env_model
 
 def get_rsquare(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     y_true = y_true.flatten()
@@ -37,6 +37,8 @@ def get_rsquare(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     ss_res = np.sum((y_true-y_pred)**2)
     return 1 - ss_res/ss_tot
 
+
+# with GYM env
 def evaluate(
     env: gym.Env,
     actor: nn.Module,
@@ -71,8 +73,10 @@ def evaluate(
     #print("steps", steps)
     return np.array(returns), init_obs, steps
 
+
+# with Simulated env
 def evaluate_simulator(
-    env: env_mod.MyEnv,
+    env: env_model.MyEnv,
     actor: nn.Module,
     num_episodes: int,
     init_obs: np.ndarray,
@@ -113,9 +117,11 @@ def evaluate_simulator(
     #print("elbos", elbos)
     return np.array(returns)
 
+
+# add simulator data to replay buffer (sensitivity and reward penalization)
 def augment_replay_buffer(
     rbuffer: ReplayBuffer,
-    env: env_mod.MyEnv,
+    env: env_model.MyEnv,
     actor: nn.Module,
     num_episodes: int,
     init_obs: np.ndarray,
@@ -224,7 +230,7 @@ def main(config: Config):
     eval_env = make_env(config.dataset_name, config.eval_seed)
     state_dim, action_dim = get_env_info(eval_env)
 
-    myenv = env_mod.MyEnv(config.chkpt_path, state_dim, action_dim, device, eval_env._max_episode_steps, 
+    myenv = env_model.MyEnv(config.chkpt_path, state_dim, action_dim, device, eval_env._max_episode_steps, 
                           vae_chkpt_path=config.vae_chkpt_path, kappa=config.sim_kappa)
 
     actor = DetActor(state_dim=state_dim, action_dim=action_dim, 

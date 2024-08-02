@@ -20,7 +20,7 @@ eval_seed: 42
 train_seed:  0
 eval_randomize: false
 train_randomize: false
-is_ar: true
+is_ar: true  # true: auto-regressive, false: non-auto-regressive
 holdout_per: 5
 holdout_num: 5
 holdout_randomize: false

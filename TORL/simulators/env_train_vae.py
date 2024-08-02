@@ -13,8 +13,8 @@ import pyrallis
 import uuid
 from tqdm.auto import trange
 
-from env_util_offline import Config, qlearning_dataset, get_env_info, sample_batch_offline, qlearning_dataset2, str_to_floats, get_vae_sample
-from env_mod import Dynamics, GRU_update, VAE
+from env_util import Config, qlearning_dataset, get_env_info, sample_batch_offline, qlearning_dataset2, str_to_floats, get_vae_sample
+from env_model import Dynamics, GRU_update, VAE
 from torch import nn
 
 

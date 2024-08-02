@@ -5,7 +5,7 @@ actor_n_hiddens: 3
 batch_size: 1024
 critic_bc_coef: 0.01
 critic_learning_rate: 0.001
-critic_ln: true
+critic_ln: True
 critic_n_hiddens: 3
 dataset_name: hopper-medium-v2
 eval_episodes: 20
@@ -16,7 +16,7 @@ group: james
 hidden_dim: 256
 name: rebrac-pytorch-myenv
 noise_clip: 0.5
-normalize_q: true
+normalize_q: True
 normalize_reward: false
 normalize_states: false
 num_epochs: 2000
@@ -28,14 +28,14 @@ tau: 0.05
 train_seed: 0
 chkpt_path: TORL/config/hopper/hopper_medium_v2_ar.pt
 vae_chkpt_path: TORL/config/hopper/hopper_medium_v2_vae.pt
-use_gym_env: true
+use_gym_env: True   # no gym env
 eval_step_limit: 99999
 save_chkpt_path: TORL/config/hopper/__tmp__/medium_v2_actor
 save_chkpt_per: 10
 sim_kappa: 0.01
 replay_buffer_size: 500000
-use_augment_data: true
+use_augment_data: True   # no data to replay buffer
 augment_per: 10
 augment_episode: 10
 sensitivity_threshold: 0.01
-reward_penalize: true
+reward_penalize: True

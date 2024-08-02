@@ -4,26 +4,26 @@ cd sfu/ORL_optimizer  #replace with your own ORL_optimizer folder
 
 To evaluate with myenv simulator and the gym environment with Rebrac:
 
-python3 TORL/algorithms/rebrac_gym_main.py --config TORL/config/hopper/rebrac_hopper_medium_v2.yaml
+python3 TORL/algorithms/rebrac_main.py --config TORL/config/hopper/rebrac_hopper_medium_v2.yaml
 
 ## FILES
 
-rebrac_gym_main.py
+- rebrac_main.py
 
-training and evaluation
+The main file to train Rebrac
 
-rebrac_mod.py
+- rebrac_model.py
 
-Pytorch modules
+the model architecture of the components
 
-rebrac_update.py
+- rebrac_update.py
 
-update actor and critic routines 
+update actor and critic moduels based on RebRac
 
-rebrac_util.py
+- rebrac_util.py
 
-config and other utilities
+config files and get data loader and D4RL
 
-rebrac_eval.py
+- rebrac_eval.py
 
-evaluation for myenv simulator and gym
+evaluate gym - evalute simulated env - get transition from simulated env for data augmentation

@@ -12,8 +12,8 @@ import pyrallis
 import uuid
 from tqdm.auto import trange
 
-from env_util_offline import Config, qlearning_dataset2, get_env_info, sample_batch_offline, get_rsquare, str_to_floats
-from env_mod import Dynamics, GRU_update
+from env_util import Config, qlearning_dataset2, get_env_info, sample_batch_offline, get_rsquare, str_to_floats
+from env_model import Dynamics, GRU_update
 
 
 from mpl_interactions import ioff, panhandler, zoom_factory

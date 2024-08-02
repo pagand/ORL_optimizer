@@ -25,52 +25,52 @@ import time
 @dataclass
 class Config:
     # wandb params
-    project: str = "TORL"
-    group: str = "rebrac"
-    name: str = "rebrac"
+    project: str 
+    group: str 
+    name: str
     # model params
-    actor_learning_rate: float = 1e-3
-    critic_learning_rate: float = 1e-3
-    hidden_dim: int = 256
-    actor_n_hiddens: int = 3
-    critic_n_hiddens: int = 3
-    gamma: float = 0.99
-    tau: float = 0.005
-    actor_bc_coef: float = 0.001
-    critic_bc_coef: float = 0.01
-    actor_ln: bool = False
-    critic_ln: bool = True
-    policy_noise: float = 0.2
-    noise_clip: float = 0.5
-    policy_freq: int = 2
-    normalize_q: bool = True
+    actor_learning_rate: float
+    critic_learning_rate: float
+    hidden_dim: int 
+    actor_n_hiddens: int
+    critic_n_hiddens: int
+    gamma: float
+    tau: float 
+    actor_bc_coef: float 
+    critic_bc_coef: float 
+    actor_ln: bool 
+    critic_ln: bool 
+    policy_noise: float
+    noise_clip: float 
+    policy_freq: int 
+    normalize_q: bool 
     # training params
-    dataset_name: str = "halfcheetah-medium-v2"
-    batch_size: int = 1024
-    num_epochs: int = 1000
-    num_updates_on_epoch: int = 1000
-    normalize_reward: bool = False
-    normalize_states: bool = False
+    dataset_name: str
+    batch_size: int
+    num_epochs: int 
+    num_updates_on_epoch: int
+    normalize_reward: bool 
+    normalize_states: bool 
     # evaluation params
-    eval_episodes: int = 50
-    eval_every: int = 10
+    eval_episodes: int 
+    eval_every: int 
     # general params
-    train_seed: int = 0
-    eval_seed: int = 42
+    train_seed: int
+    eval_seed: int 
     #myenv params
-    chkpt_path: str = "TORL/config/halfcheetah/halfcheetah_medium_v2_ar.pt"
-    vae_chkpt_path: str = "TORL/config/halfcheetah/halfcheetah_medium_v2_vae.pt"
-    use_gym_env: bool = False
-    eval_step_limit: int = 100
-    save_chkpt_path: str = "TORL/config/halfcheetah/__tmp__/medium_v2_actor"
-    save_chkpt_per: int = 10
-    sim_kappa: float = 0.01
-    replay_buffer_size: int = 1000000
-    use_augment_data: bool = False
-    augment_per: int = 5
-    augment_episode: int = 10
-    sensitivity_threshold: float = 0.01
-    reward_penalize: bool = True
+    chkpt_path: str 
+    vae_chkpt_path: str
+    use_gym_env: bool 
+    eval_step_limit: int 
+    save_chkpt_path: str 
+    save_chkpt_per: int
+    sim_kappa: float
+    replay_buffer_size: int
+    use_augment_data: bool 
+    augment_per: int 
+    augment_episode: int 
+    sensitivity_threshold: float 
+    reward_penalize: bool 
 
     def refresh_name(self):
         self.name = f"{self.name}-{self.dataset_name}-{str(uuid.uuid4())[:4]}"

@@ -6,29 +6,24 @@ then run
 
 python TORL/simulators/env_plot.py --config TORL/config/hopper/env_hopper_medium_v2.yaml
 
-
 ## Files
 
-env_mod.py
+- env_model.py
 
 contains models and MyEnv
 
-env_util.py
+- env_util.py
 
-common utility classes
+common utility classes for config parsing and getting sample batch
 
-env_util_offline.py
+- env_train_offline.py
 
-utility classes for offline d4rl
+training for environment using offline d4rl data, use env_... . yaml file both AR and NAR
 
-env_train_offline.py
+- env_train_vae.py
 
-training for environment using offline d4rl data
+train VAE from the model in env_mod and save checkpt in config folder
 
-env_eval_offline.py
+- env_plot.py
 
-evaluating the environment 
-
-env_plot.py
-
-plotting and returns R2 data
+plotting and returns R2 data, predicted reward and few state AR vs NAR

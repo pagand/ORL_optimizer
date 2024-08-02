@@ -1,4 +1,4 @@
-project: ORL_optimizer
+project: TORL
 group: env
 name: env_train_offline
 dataset_name: halfcheetah-medium-v2
@@ -20,7 +20,7 @@ eval_seed: 42
 train_seed:  0
 eval_randomize: false
 train_randomize: false
-is_ar: true
+is_ar: false
 gamma: 0.8
 holdout_per: 5
 holdout_num: 5

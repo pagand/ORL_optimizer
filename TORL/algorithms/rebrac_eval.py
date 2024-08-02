@@ -22,6 +22,7 @@ import sys
 import os
 
 from sklearn.metrics import r2_score
+from replay_buffer import ReplayBuffer
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
@@ -96,9 +97,10 @@ def evaluate_simulator(
                 obs = obs.to(device)
                 with torch.no_grad():
                     action = actor(obs).detach()
-                obs, reward, done,  prob, elbo, discounted_reward = env.step(action)
+                obs, reward, done,  prob, elbo, discounted_reward, *_ = env.step(action, use_sensitivity=True)
+                #print("step", step, "reward", reward)
                 #done = is_done_walker2d(obs[0])
-                total_reward += float(discounted_reward)
+                total_reward += float(reward)
                 #total_elbo += float(elbo)
                 step+=1
                 
@@ -108,6 +110,82 @@ def evaluate_simulator(
                 #elbos.append(total_elbo)
                 
                 break
+    #print("elbos", elbos)
+    return np.array(returns)
+
+def augment_replay_buffer(
+    rbuffer: ReplayBuffer,
+    env: env_mod.MyEnv,
+    actor: nn.Module,
+    num_episodes: int,
+    init_obs: np.ndarray,
+    steps: np.ndarray,
+    reward_penalize: bool,
+    sensitivity_threshold: float,
+    device: torch.device,
+    step_limit: int = 1e8
+):
+    returns = []
+    elbos = []
+    elen = init_obs.shape[0]
+    for i in trange(num_episodes, desc="Augment Data", leave=False):
+        k = i % elen
+        for _ in range(3):
+            obs = init_obs[k:k+1, :]
+            # add a very small perturbation to the initial state
+            obs += np.random.uniform(-1e-2, 1e-2, obs.shape)
+            obs = Tensor(obs).to(device)
+            env.reset(obs)
+            done = False
+            total_reward = 0.0
+            total_elbo = 0.0
+            step = 0
+            e_data = []
+            while (not done) and (step < step_limit) and (step < steps[k]):
+                obs = obs.to(device)
+                with torch.no_grad():
+                    action = actor(obs).detach()
+                obs_, reward, done,  prob, elbo, discounted_reward, s_states, s_rewards = env.step(action, use_sensitivity=True)
+                e_data.append([obs.cpu().numpy(), 
+                               action.cpu().numpy(), 
+                               obs_.cpu().numpy(), 
+                               reward.item(), 
+                               prob.item(),
+                               elbo.item(), 
+                               discounted_reward.item(), 
+                               s_states.item(), 
+                               s_rewards.item()])
+                #print("e_data", len(e_data))
+                obs = obs_
+                #print("step", step, "reward", reward)
+                #done = is_done_walker2d(obs[0])
+                total_reward += float(reward)
+                #total_elbo += float(elbo)
+                step+=1
+                
+                #print("sim reward", reward, "total_reward", total_reward, "step", step, "done", done)   
+            if np.isnan(total_reward) or abs(total_reward) > 1e6:
+                continue
+            returns.append(total_reward)
+            # add to replay buffer
+            for c in range(len(e_data)-1):
+                done = c == len(e_data) - 2
+                if reward_penalize:
+                    reward_ = e_data[c][6]
+                else:
+                    reward_ = e_data[c][3]
+                s_states = e_data[c][7]
+                if s_states > sensitivity_threshold:
+                    continue
+                rbuffer.add_transition_np(
+                    e_data[c][0],
+                    e_data[c][1],
+                    e_data[c][2],
+                    e_data[c+1][1],
+                    reward_,
+                    done                    
+                )
+            break
     #print("elbos", elbos)
     return np.array(returns)
 

@@ -190,6 +190,40 @@ class VAE(nn.Module):
         # Compute the ELBO by combining the reconstruction loss and the KL divergence
         elbo = p_x_given_z + kl_div
         return elbo
+    
+def halfcheetah_reward(x, state, action, next_state):
+
+    dt = 0.05
+    x_before = x
+    #x_after = next_state[8]*dt + x_before
+    x_after = (state[8] + next_state[8])/2*dt + x_before
+    x_velocity = (x_after - x_before) / dt
+
+    control_cost = 0.1 * torch.sum(torch.square(action))
+    forward_reward = 1.0 * x_velocity
+    reward = forward_reward - control_cost
+    return reward, x_after
+
+def hopper_is_done(state_):
+    state_ = state_.cpu().numpy()
+    healthy_state_range=(-100.0, 100.0)
+    healthy_z_range=(0.7, float("inf"))
+    healthy_angle_range=(-0.2, 0.2)
+    
+    z, angle = state_[0:2]
+    state = state_[1:]
+    print("z", z, "angle", angle, "state", state)
+
+    min_state, max_state = healthy_state_range
+    min_z, max_z = healthy_z_range
+    min_angle, max_angle = healthy_angle_range
+
+    healthy_state = np.all(np.logical_and(min_state < state, state < max_state))
+    healthy_z = min_z < z < max_z
+    healthy_angle = min_angle < angle < max_angle
+
+    is_healthy = all((healthy_state, healthy_z, healthy_angle))
+    return not is_healthy
 
 class MyEnv:
 
@@ -216,10 +250,12 @@ class MyEnv:
         self.action_dim = action_dim
         self.max_episode_steps = max_episode_steps
         self.device = device
+        self.chkpt_path = chkpt_path
         self.load_from_chkpt(chkpt_path)
         self.load_vae_from_chkpt(vae_chkpt_path)
         self.kappa = kappa
         self.dynamics_nn.to(device)
+        self.x = 0
 
     def load_from_chkpt(self, chk_path: str) -> None:
         checkpoint = torch.load(chk_path)
@@ -268,15 +304,46 @@ class MyEnv:
         self.states = self.states.to(self.device)
         self.actions = self.actions.to(self.device)
         self.rewards = self.rewards.to(self.device)
+        self.x = 0
+
+    def _cal_sensitivity(self, states: ObsType, actions: ActType, next_state: ObsType, reward, K=10, sigma=0.01):
+        # generate perturbations of size (K, states.shape[0], states.shape[1])
+        states_noise = torch.normal(mean=0, std=sigma, size=(K, states.shape[1], states.shape[2])).to(self.device)
+        actions_noise = torch.normal(mean=0, std=sigma, size=(K, actions.shape[1], actions.shape[2])).to(self.device)
+        noisy_states = states + states_noise
+        noisy_actions = actions + actions_noise
+        with torch.inference_mode():
+            # (1, 1, 17) , (1, 1, 1)
+            noisy_nstate, noisy_reward = self.dynamics_nn(noisy_states, noisy_actions, is_eval=True, is_ar=True)
         
-    def step(self, action: ActType) -> Tuple[ObsType, float, bool]:
+        if self.config_dict['use_gru_update'] and self.istep >= self.sequence_num:
+            input = torch.cat((noisy_states, noisy_actions), dim=-1)
+            input = input[:, :self.sequence_num]
+            pred_features = torch.cat((noisy_nstate.detach(), noisy_reward.detach()), dim=-1)
+            with torch.inference_mode():
+                g_pred = self.gru_nn(pred_features, input)
+            g_states_pred = g_pred[:, :, :self.state_dim]
+            g_rewards_pred = g_pred[:, :, self.state_dim:]
+
+            noisy_nstate = g_states_pred.squeeze(1)
+            noisy_reward = g_rewards_pred.squeeze(1)
+        else:
+            noisy_nstate = noisy_nstate.squeeze(1)
+            noisy_reward = noisy_reward.squeeze(1)
+
+        # calculate sensitivity
+        s1 = torch.var(noisy_nstate - next_state, dim=0).mean()
+        s2 = torch.var(noisy_reward - reward, dim=0).mean()
+        return s1, s2
+        
+    def step(self, action: ActType, use_sensitivity: bool = False) -> Tuple[ObsType, float, bool]:
         action = action.to(self.device)
         self.actions = torch.cat((self.actions, action), dim=0)
         steps = min(len(self.states), self.sequence_num)
         states_ = self.states[-steps:].unsqueeze(0)
         actions_ = self.actions[-steps:].unsqueeze(0)
         with torch.inference_mode():
-            (1, 1, 17) , (1, 1, 1)
+            # (1, 1, 17) , (1, 1, 1)
             next_state, reward = self.dynamics_nn(states_, actions_, is_eval=True, is_ar=True)
         
         if self.config_dict['use_gru_update'] and self.istep >= self.sequence_num:
@@ -299,7 +366,18 @@ class MyEnv:
 
         #print("next_state", next_state.shape, "reward", reward.shape)
         #print("self.states", self.states.shape, "self.actions", self.actions.shape, "self.rewards", self.rewards.shape)
+        '''
+        _state = self.denormalize_state(self.states[-1])
+        _next_state = self.denormalize_state(next_state[0])
 
+        reward_, self.x = halfcheetah_reward(self.x, _state, self.actions[-1], _next_state)
+        '''
+        #print("reward_", reward_, "reward", reward)
+        # calculate model sensitivity
+        s_state, s_reward = (0.0, 0.0)
+        if use_sensitivity:
+            s_state, s_reward = self._cal_sensitivity(states_, actions_, next_state, reward, K=10, sigma=0.01)
+            #print("s_state", s_state, "s_reward", s_reward)
         # (N, state_dim)
         self.states = torch.cat((self.states, next_state), dim=0)
         # (N)
@@ -307,16 +385,19 @@ class MyEnv:
         self.istep += 1
         next_state = next_state.detach()
         reward = reward.detach()
+
         next_state = self.denormalize_state(next_state)
         reward = self.denormalize_reward(reward)
+
         done = (self.istep >= self.max_episode_steps)
         elbo = elbo.detach()
         #print("threshold", self.threshold)
         prob = Tensor([1/(1+self.kappa*(e-self.threshold)) if e > self.threshold else 1 for e in elbo]).to(self.device)
         discounted_reward = reward * prob
         #print("next_state", next_state, "reward", reward, "done", done, "prob", prob, "elbo", elbo, "discounted_reward", discounted_reward)
-                                                                                                                                                                                                                                                                         
-        return next_state, reward, done, prob, elbo, discounted_reward                                                                                                                                                                                                                 
+        #if "hopper" in self.chkpt_path:
+        #    done = hopper_is_done(next_state[0])                                                                                                                                                                                                                                                                 
+        return next_state, reward, done, prob, elbo, discounted_reward, s_state, s_reward                                                                                                                                                                                                         
 
 def main():
     chkpt_path = "/home/james/sfu/ORL_optimizer/TORL/config/halfcheetah/halfcheetah_medium_v2_ar.pt"

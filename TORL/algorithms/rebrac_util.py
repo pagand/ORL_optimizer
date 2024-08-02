@@ -65,6 +65,12 @@ class Config:
     save_chkpt_path: str = "TORL/config/halfcheetah/__tmp__/medium_v2_actor"
     save_chkpt_per: int = 10
     sim_kappa: float = 0.01
+    replay_buffer_size: int = 1000000
+    use_augment_data: bool = False
+    augment_per: int = 5
+    augment_episode: int = 10
+    sensitivity_threshold: float = 0.01
+    reward_penalize: bool = True
 
     def refresh_name(self):
         self.name = f"{self.name}-{self.dataset_name}-{str(uuid.uuid4())[:4]}"
@@ -131,7 +137,11 @@ def get_d4rl_dataset(
         done_.append(done_bool)
 
     #print("state", np.array(obs_), "action", np.array(action_), "next_state", np.array(next_obs_), "reward", np.array(reward_), "done", np.array(done_))
-
+    '''
+    x = 0
+    for i in range(100):
+        x = halfcheetah_reward(x, np.array(obs_)[i], np.array(action_)[i], np.array(next_obs_)[i], np.array(reward_)[i])
+    '''
     return {
         "state": np.array(obs_),
         "action": np.array(action_),
@@ -202,6 +212,20 @@ class Metrics:
         for key in self.accumulators:
             self.accumulators[key] = (0.0, 0)
 
+def halfcheetah_reward(x, state, action, next_state, true_reward):
+
+    dt = 0.05
+    x_before = x
+    #x_after = next_state[8]*dt + x_before
+    x_after = (state[8] + next_state[8])/2*dt + x_before
+    x_velocity = (x_after - x_before) / dt
+
+    control_cost = 0.1 * np.sum(np.square(action))
+    forward_reward = 1.0 * x_velocity
+    reward = forward_reward - control_cost
+    print("reward", reward, "true_reward", true_reward)
+    return x_after
+
 
 def test():
     dataset_name = "halfcheetah-medium-v2"
@@ -212,6 +236,7 @@ def test():
     batch = sample_batch_d4rl(dataset, batch_size, True)
     for key, value in batch.items():
         print(key, value.shape)
+
 
 
 def main():

@@ -23,13 +23,14 @@ num_epochs: 1000
 num_updates_on_epoch: 1000
 policy_freq: 2
 policy_noise: 0.2
-project: USRA2024
+project: TORL
 tau: 0.05
 train_seed: 0
-chkpt_path: TORL/config/halfcheetah/halfcheetah_medium_v2_ar.pt
+chkpt_path: TORL/config/halfcheetah/halfcheetah_medium_v2_nar.pt
 vae_chkpt_path: TORL/config/halfcheetah/halfcheetah_medium_v2_vae.pt
 use_gym_env: true
 eval_step_limit: 99999
 save_chkpt_path: TORL/config/halfcheetah/__tmp__/medium_v2_actor
 save_chkpt_per: 5
 sim_kappa: 0.01
+replay_buffer_size: 500000

@@ -1,3 +1,6 @@
+TORL/config/halfcheetah/
+TORL/config/walker2d/
+
 .idea/
 Material/
 BoilerData/
@@ -20,4 +23,5 @@ RL/.DS_Store
 
 
 *wandb*
-
+*__pycache__*
+*__tmp__*

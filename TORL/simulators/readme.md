@@ -4,7 +4,7 @@ cd sfu/ORL_optimizer # change this to your own ORL_optimizer folder
 
 then run
 
-python3 TORL/simulators/env_plot.py --config TORL/config/halfcheetah/env_halfcheetah_medium_v2.yaml
+python TORL/simulators/env_plot.py --config TORL/config/hopper/env_hopper_medium_v2.yaml
 
 
 ## Files

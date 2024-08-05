@@ -42,17 +42,30 @@ pip install "jax[cuda11_cudnn86]"==0.4.7 -f https://storage.googleapis.com/jax-r
 
 The code of combustion simulator is in `Simulator/simrnn_model.py`, the code of model-based offline RL framework, MORE, is in `RL/primal_dual_ddpg.py`.
 
-- For vessel model
+* For Model-based offline RL:
+
+```
+cd MBORL
+```
+
+* For different offline RL models
+
+```
+cd CORL
+```
+
+* For vessel training model and simulator
 
 ```
 cd VesselModel
 ```
 
-- For Model-based offline RL:
+* For MORE paper implementation
 
 ```
-cd MBORL
+cd MORE
 ```
+
 
 ## Disclaimer
 

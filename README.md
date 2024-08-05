@@ -32,7 +32,7 @@ Install the correct version of pytorch given your CUDA from [start locally](http
 pip3 install torch  --index-url https://download.pytorch.org/whl/cu118
 ```
 
-Install Jax (only for the CORL):
+Install Jax (only required for the CORL):
 
 ```Shell
 pip install "jax[cuda11_cudnn86]"==0.4.7 -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html

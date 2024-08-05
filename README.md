@@ -26,7 +26,7 @@ pip install 'cython<3'
 pip install scipy==1.12
 ```
 
-Install the correct version of pytorch given your CUDA from [previous versions](https://pytorch.org/get-started/previous-versions/) or [start locally](https://pytorch.org/get-started/locally/). Replcae the {version} with the correct compatible version. For CUDA 11.8
+Install the correct version of pytorch given your CUDA from [start locally](https://pytorch.org/get-started/locally/) or [previous versions](https://pytorch.org/get-started/previous-versions/).  For CUDA 11.8
 
 ```Shell
 pip3 install torch  --index-url https://download.pytorch.org/whl/cu118

@@ -1,4 +1,4 @@
-# Model-based Offline RL optimizer
+# Model-based Confidence-aware Offline RL
 
 ### Contents
 

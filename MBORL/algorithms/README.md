@@ -4,7 +4,7 @@ cd ORL_optimizer  #replace with your own ORL_optimizer folder
 
 To evaluate with myenv simulator and the gym environment with Rebrac:
 
-python3 TORL/algorithms/rebrac_main.py --config MBORL/config/hopper/rebrac_hopper_medium_v2.yaml
+python3 MBORL/algorithms/rebrac_main.py --config MBORL/config/hopper/rebrac_hopper_medium_v2.yaml
 
 ## FILES
 

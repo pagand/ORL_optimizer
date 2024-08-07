@@ -45,26 +45,20 @@ class ReplayBuffer:
 
     # Loads data in d4rl format, i.e. from Dict[str, np.array].
     def load_d4rl_dataset(self, data: Dict[str, np.ndarray]):
-        if self._size != 0:
-            raise ValueError("Trying to load data into non-empty replay buffer")
         n_transitions = data["state"].shape[0]
-        if n_transitions > self._buffer_size:
-            raise ValueError(
-                "Replay buffer is smaller than the dataset you are trying to load!"
-            )
         self._states[:n_transitions] = self._to_tensor(data["state"])
         self._actions[:n_transitions] = self._to_tensor(data["action"])
         self._next_states[:n_transitions] = self._to_tensor(data["next_state"])
         self._next_actions[:n_transitions] = self._to_tensor(data["next_action"])
         self._rewards[:n_transitions] = self._to_tensor(data["reward"][..., None])
         self._dones[:n_transitions] = self._to_tensor(data["done"][..., None])
-        self._size += n_transitions
-        self._pointer = min(self._size, n_transitions)
+        self._size = n_transitions
+        self._pointer = n_transitions
 
         #print(f"Dataset size: {n_transitions}")
 
     def sample(self, batch_size: int):
-        indices = torch.randint(0, self._size, (batch_size,)).to(self._device)
+        indices = torch.randint(0, self._size-1, (batch_size,)).to(self._device)
         states = self._states[indices]
         actions = self._actions[indices]
         rewards = self._rewards[indices]
@@ -100,8 +94,8 @@ class ReplayBuffer:
         self._actions[self._pointer] = self._to_tensor(action)
         self._next_states[self._pointer] = self._to_tensor(next_state)
         self._next_actions[self._pointer] = self._to_tensor(next_action)
-        self._rewards[self._pointer] = self._to_tensor(reward)
-        self._dones[self._pointer] = self._to_tensor(done)
+        self._rewards[self._pointer] = self._to_tensor(reward).unsqueeze(-1)
+        self._dones[self._pointer] = self._to_tensor(done).unsqueeze(-1)
 
         # | ---- _d4rl_size ---- | ---- _myenv_size ---- |
 

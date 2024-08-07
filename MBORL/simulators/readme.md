@@ -4,7 +4,7 @@ cd ORL_optimizer
 
 then run
 
-python TORL/simulators/env_plot.py --config TORL/config/hopper/env_hopper_medium_v2.yaml
+python3 MBORL/simulators/env_plot.py --config MBORL/config/hopper/env_hopper_medium_v2.yaml
 
 ## Files
 

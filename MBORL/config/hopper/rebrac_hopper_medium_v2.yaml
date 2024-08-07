@@ -14,7 +14,7 @@ eval_seed: 42
 gamma: 0.99
 group: james
 hidden_dim: 256
-name: rebrac-pytorch-myenv
+name: rebrac-pytorch-augment
 noise_clip: 0.5
 normalize_q: True
 normalize_reward: false
@@ -23,7 +23,7 @@ num_epochs: 2000
 num_updates_on_epoch: 100
 policy_freq: 2
 policy_noise: 0.2
-project: TORL
+project: MBORL
 tau: 0.05
 train_seed: 0
 chkpt_path: MBORL/config/hopper/hopper_medium_v2_ar.pt
@@ -35,9 +35,9 @@ save_chkpt_per: 10
 sim_kappa: 0.01
 sim_reward_min: -500
 sim_reward_max: 5000
-replay_buffer_size: 500000
+replay_buffer_size: 50000
 use_augment_data: True   # no data to replay buffer
 augment_per: 10
 augment_episode: 10
-sensitivity_threshold: 0.01
-reward_penalize: True
+sensitivity_threshold: 10000.0
+reward_penalize: False

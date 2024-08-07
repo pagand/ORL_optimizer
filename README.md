@@ -71,6 +71,6 @@ cd MORE
 
 This code is is  heavily based on
 
-- paper DeepThermal: Combustion Optimization for Thermal Power Generating Units Using Offline Reinforcement Learning  [https://github.com/ryanxhr/DeepThermal]()
-- CORL (Clean Offline Reinforcement Learning)  github page by Thinkof [https://github.com/tinkoff-ai/CORL]()
-- Model optimize vessel [https://github.com/pagand/model_optimze_vessel]()
+- paper DeepThermal: [Combustion Optimization for Thermal Power Generating Units Using Offline Reinforcement Learning](https://github.com/ryanxhr/DeepThermal)
+- CORL (Clean Offline Reinforcement Learning)  [github](https://github.com/tinkoff-ai/CORL)
+- [Model optimize vessel ](https://github.com/pagand/model_optimze_vessel)

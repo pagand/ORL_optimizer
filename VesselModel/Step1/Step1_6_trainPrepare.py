@@ -74,12 +74,14 @@ df = df[df["adversarial"]==0]
 
 df.to_csv("data/Features/feature2.csv", index=False)
 
+df = pd.read_csv("data/Features/feature2.csv")
 
-cols = ["Time2", "SPEED", "HEADING", "MODE", "turn", "acceleration",
+
+cols = ["Time2", "trip_id", "adversarial", "SPEED", "HEADING", "MODE", "turn", "acceleration",
         'current', 'rain', 'snowfall', 'wind_force', 'wind_direc',
             "resist_ratio","change_x_factor", "change_y_factor", "countDown", 
             "is_weekday", 'direction',"season", "departure_hour",
-            "FC","SOG","LONGITUDE","LATITUDE"]
+            "FC","SOG","LONGITUDE","LATITUDE",]
 
 df = df[cols]
 

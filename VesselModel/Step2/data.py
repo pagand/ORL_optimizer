@@ -24,12 +24,14 @@ path = "data/Features/feature3.csv"
 # path = "data/Features/feature2.csv"
 df = pd.read_csv(path)
 
-df= df[df["adversarial"] == 0]
+print(df.columns)
+
+# df= df[df["adversarial"] == 0]
 
 # df.iloc[0, df.columns.get_loc('prev_HEADING')] = df.iloc[1, df.columns.get_loc('prev_HEADING')]
 # df.iloc[0, df.columns.get_loc('prev_SOG')] = df.iloc[1, df.columns.get_loc('prev_SOG')]
-# df.iloc[0, df.columns.get_loc('turn')] = df.iloc[1, df.columns.get_loc('turn')]
-# df.iloc[0, df.columns.get_loc('acceleration')] = 0
+df.iloc[0, df.columns.get_loc('turn')] = df.iloc[1, df.columns.get_loc('turn')]
+df.iloc[0, df.columns.get_loc('acceleration')] = 0
 
 
 columns = df.columns.drop("countDown")

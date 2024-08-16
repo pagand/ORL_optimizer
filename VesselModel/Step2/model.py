@@ -1,7 +1,6 @@
 import os
 import math
 import pandas as pd
-from sklearn.preprocessing import MinMaxScaler, StandardScaler, PowerTransformer
 import torch
 import torch.nn as nn
 from torch import nn, Tensor
@@ -25,10 +24,6 @@ if torch.cuda.is_available():
 else:
     device = torch.device('cpu')
 
-# batch_size=256
-# sequence_length = 25
-# context_length = 24
-# prediction_horizon = 5 #10
 
 class GRU_update(nn.Module):
     def __init__(self,input_size, hidden_size=1, output_size=4, num_layers=1, prediction_horizon=5, device = device):
@@ -102,20 +97,6 @@ gru_model = GRU_update(4, hidden_size=375, output_size=4, num_layers=1, predicti
 
 tf_model = tf_model.float()
 
-# class CustomInformer(nn.Module):
-#     def __init__(self, informer_model, output_features = 4):
-#         super(CustomInformer, self).__init__()
-#         self.informer = informer_model
-#         self.fc = nn.Linear(in_features=informer_model.config.hidden_size, out_features=output_features, bias=True).to(device)
-
-#     def forward(self, **inputs):
-        
-#         outputs = self.informer(**inputs)
-#         last_hidden_state = outputs.last_hidden_state
-#         # print(last_hidden_state.shape,last_hidden_state)
-#         tf_out = self.fc(last_hidden_state)
-#         # print(tf_out[0])
-#         return tf_out, last_hidden_state
 
 
 # combine tf_model and GRU_update
@@ -132,20 +113,6 @@ class vesselModel(nn.Module):
                 static_real_features, past_observed_mask, 
                 future_time_features, future_values, 
                 ):
-      
-        # pred_tf,last_hidden_state = self.tf_model(past_values=past_values, 
-        #                         past_time_features=past_time_features, 
-        #                         static_real_features=static_real_features,
-        #                         past_observed_mask=past_observed_mask, 
-        #                         future_values=future_values, 
-        #                         future_time_features=future_time_features, 
-        #                         output_hidden_states=True,
-        #                         return_dict=True)
-        # # print("pred_tf", pred_tf[0])
-        # pred_wp = self.gru_model(pred_tf, past_time_features)    
-        # # print("pred_wp", pred_wp[0])
-        # # print("furture_values", future_values[0])
-        # # print(pred_tf.shape, pred_wp.shape, future_values.shape)
 
         tf_output = self.tf_model(past_values=past_values, 
                                 past_time_features=past_time_features, 
@@ -174,53 +141,3 @@ class WeightedMSELoss(nn.Module):
         loss = weighted_squared_diff.mean()
 
         return loss
-
-
-
-
-
-
-
-
-
-
-    #  with torch.no_grad():
-    #         predicted = self.tf_model.generate(past_values=past_values, past_time_features=past_time_features, static_real_features=static_real_features,
-    #                               past_observed_mask=past_observed_mask, future_time_features=future_time_features).sequences.mean(dim=1)
-
-    # def generate(self, past_values, past_time_features, static_real_features, past_observed_mask, future_time_features, future_values):
-    #     tf_pred = self.tf_model.generate(past_values=past_values, past_time_features=past_time_features, static_real_features=static_real_features,
-    #                               past_observed_mask=past_observed_mask, future_time_features=future_time_features).sequences.mean(dim=1)
-    #     outputs = self.gru_model(tf_pred, future_values)
-    #     return outputs
-#tf_model = tf_model.float()
-
-#gru_model = GRU_update(input_size=len(y_cols), hidden_size=300, output_size=len(y_cols), num_layers=1, prediction_horizon=prediction_horizon).to(device)
-
-
-#model = vesselModel(tf_model, gru_model).to(device)
-
-
-  # print("past_values", past_values.shape)
-        # print("past_time_features", past_time_features.shape)
-        # print("static_real_features", static_real_features.shape)
-        # print("future_values", future_values.shape)
-        # print("future_time_features", future_time_features.shape)
-         # print("predicted_values", predicted_values.shape)
-        # print(pred_tf)
-        # # print(pred_tf.last_hidden_state.shape)
-        # print(pred_tf.encoder_last_hidden_state.shape)
-        # print(pred_tf.decoder_hidden_states[-1].shape)
-        # print("pred_tf", pred_tf.shape)
-        # print("pred_wp", pred_wp.shape)
-
-
- # outputs = self.informer(**inputs, output_hidden_states=True, return_dict=True)
-        # print("------",outputs.params)
-        # last_hidden_state = outputs.decoder_hidden_states[-1]
-        
-        # print("------",last_hidden_state.shape)
-        
-        # print("------",tf_out.shape)
-        # print(tf_out.detach().cpu().numpy())
-        # print("tf_out", tf_out)

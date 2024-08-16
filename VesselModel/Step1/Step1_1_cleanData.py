@@ -96,9 +96,9 @@ print(df.groupby(df.trip_id).count().head(20).Dati)
 
 
 # df.to_csv("~/BCFerryData/queenCsvOut_withID.csv", index=False)
-df.to_csv("data/Features/queenCsvOut_withID.csv", index=False)
+# df.to_csv("data/Features/queenCsvOut_withID.csv", index=False)
 # df = pd.read_csv("~/BCFerryData/queenCsvOut_withID.csv")
-df = pd.read_csv("data/Features/queenCsvOut_withID.csv")
+# df = pd.read_csv("data/Features/queenCsvOut_withID.csv")
 
 
 # print(df.groupby(df.trip_id).count()) 

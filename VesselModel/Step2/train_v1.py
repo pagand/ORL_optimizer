@@ -1,7 +1,6 @@
 import os
 import math
 import pandas as pd
-from sklearn.preprocessing import MinMaxScaler, StandardScaler, PowerTransformer
 import torch
 import torch.nn as nn
 from torch import nn, Tensor
@@ -158,11 +157,15 @@ def train(trainloader, validloader, model_name = "model_v1"):
         
 
         print("best epoch: ", best_epoch, "best loss: ", best_loss)
-        path = "data/Checkpoints/{}/{}_epoch_{}_tf.pt".format(model_name, model_name, epoch)
-        torch.save(tf_model.state_dict(), path)
-        path = "data/Checkpoints/{}/{}_epoch_{}_gru.pt".format(model_name, model_name, epoch)
-        torch.save(gru_model.state_dict(), path)
+        # path = "data/Checkpoints/{}/{}_epoch_{}_tf.pt".format(model_name, model_name, epoch)
+        # torch.save(tf_model.state_dict(), path)
+        # path = "data/Checkpoints/{}/{}_epoch_{}_gru.pt".format(model_name, model_name, epoch)
+        # torch.save(gru_model.state_dict(), path)
     
+    path = "data/Checkpoints/{}/{}_epoch_{}_tf.pt".format(model_name, model_name, best_epoch)
+    torch.save(tf_model.state_dict(), path)
+    path = "data/Checkpoints/{}/{}_epoch_{}_gru.pt".format(model_name, model_name, best_epoch)
+    torch.save(gru_model.state_dict(), path)
     return best_epoch
 
 
@@ -299,9 +302,9 @@ if(config.log_wandb):
     wandb.watch(gru_model)
 
 # best_epoch = 93
-# best_epoch = train(trainloader, validloader, model_name)
+best_epoch = train(trainloader, validloader, model_name)
+config.best_epoch = best_epoch
 
-best_epoch = 21
 
 #test
 tf_model.load_state_dict(torch.load("data/Checkpoints/{}/{}_epoch_{}_tf.pt".format(model_name, model_name, best_epoch)))

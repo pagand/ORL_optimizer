@@ -4,8 +4,7 @@ import datetime
 import matplotlib.pyplot as plt
 from pykalman import KalmanFilter
 
-# df = pd.read_csv("~/BCFerryData/queenCsvOut_cleaned_location.csv")
-# df = pd.read_csv("~/BCFerryData/queenCsvOut_cleaned_location.csv")
+
 df = pd.read_csv("data/Features/queenCsvOut_cleaned_location.csv")
 
 df.drop(["CARGO", "CARGO_PAX", "PAX", 'TRACK_MADE_GOOD', 
@@ -33,7 +32,7 @@ for col in remove_list:
 
 # We observe that trip 1352 and 3767 missing almost all data in Speed related and location related columns (eg. 'SOG', 'LONGITUDE','LATITUDE')
 # Remove these trips
-zeroSOG = df[(df["SOG"] == 0)]
+zeroSOG = df[(df["SOG"] == 0) & (df["trip_id"] != 0)]
 zeroSOG.groupby(df.trip_id)['SOG'].count()
 emptyDataTrip = zeroSOG.groupby(df.trip_id)['SOG'].count()[zeroSOG.groupby(df.trip_id)['SOG'].count() > 60]
 
@@ -47,7 +46,7 @@ df = df[~df['trip_id'].isin(emptyDataTrip.index)]
 # test = zeroSOG.groupby(df.trip_id)['SOG'].count()[zeroSOG.groupby(df.trip_id)['SOG'].count() > 0]
 # test
 
-# id = 990
+# id = 71
 # plt.scatter(df[df.trip_id==id].LONGITUDE, df[df.trip_id==id].LATITUDE, s=2, c=df[df.trip_id==id].Time, cmap="BrBG")
 # plt.xlabel('Longitude')
 # plt.ylabel('Latitude')
@@ -55,8 +54,8 @@ df = df[~df['trip_id'].isin(emptyDataTrip.index)]
 # plt.show()
 
 
-df.to_csv("data/Features/df_cleaned_location_1.csv", index=False)
-df = pd.read_csv("data/Features/df_cleaned_location_1.csv")
+# df.to_csv("data/Features/df_cleaned_location_1.csv", index=False)
+# df = pd.read_csv("data/Features/df_cleaned_location_1.csv")
 
 
 
@@ -360,7 +359,7 @@ df.isna().sum()[df.isna().sum()>0]
 
 # Observe that these trips are special, will mark these as adversariel trip later
 
-# id = 3742
+# id = 55
 # plt.scatter(df[df.trip_id==id].LONGITUDE, df[df.trip_id==id].LATITUDE, s=2, c=df[df.trip_id==id].Time, cmap="BrBG")
 # plt.xlabel('Longitude')
 # plt.ylabel('Latitude')

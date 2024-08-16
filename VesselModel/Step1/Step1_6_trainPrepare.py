@@ -15,25 +15,14 @@ from sklearn.metrics import r2_score, mean_squared_error
 from torch.optim.lr_scheduler import StepLR
 from transformers import TimeSeriesTransformerConfig, TimeSeriesTransformerModel, TimeSeriesTransformerForPrediction
 from transformers import AutoformerConfig, AutoformerModel, AutoformerForPrediction
+import convention
 
 
-
-path = "data/Features/feature3.csv"
+# path = "data/Features/feature3.csv"
+path = "data/Features/feature1.csv"
 df = pd.read_csv(path)
-df.columns #length 53
-
-
-#### Index(['Dati', 'Time', 'DEPTH',  'HEADING', 'LATITUDE', 'LONGITUDE',
-    #    'SOG', 'SOG_SPEEDLOG_LONG',
-    #    'SOG_SPEEDLOG_TRANS',  'STW',  'WIND_ANGLE', 'WIND_SPEED',
-    #    'WIND_ANGLE_TRUE', 'WIND_SPEED_TRUE', 'trip_id', 'MODE',
-    #    'direction', 'wind_force', 'wind_direc', 'effective_wind_factor',
-    #    'effective_wind', 'datetime',
-    #    'weekday', 'Schedule', 'ScheduleType', 'countDown', 'season', 'current',
-    #    'pressure', 'rain', 'snowfall', 'weathercode', 'holiday', 'is_weekday',
-    #    'adversarial'],
-    #   dtype='object')###
-
+df.columns #length 53"
+len(df.columns)
 
 
 df["direction"] = df["direction"].apply(lambda x: 1 if x=="N-H" else 0)
@@ -68,37 +57,8 @@ df = df.drop(['PITCH_1', 'PITCH_2', 'POWER_1', 'POWER_2', 'SOG_SPEEDLOG_LONG',
        "ENGINE_1_FUEL_CONSUMPTION", "ENGINE_2_FUEL_CONSUMPTION"], axis=1)
 
 df["dt"] = pd.to_datetime(df.Schedule, format='%Y-%m-%d %H:%M:%S')
-# df["hour"] = df.dt.apply(lambda x: x.hour/24)
 df["departure_hour"] = df.dt.apply(lambda x: x.hour/24)
 
-# get one_hot for column
-def one_hot(df, cols, normalize = True):
-    for col in cols:
-        dummy = pd.get_dummies(df[col],prefix=col, drop_first=True)
-        columns = dummy.columns
-        dummy[col] = 0
-        i = 1
-        for x in columns:
-            dummy[col] = dummy[col] + dummy[x]*i
-            i = i*2
-        max = dummy[col].max()
-        if normalize:
-            df[col] = dummy[col] / max
-        else:
-            df[col] = dummy[col]
-    return df
-
-
-
-minmax_scaler = MinMaxScaler((0,1))
-
-transform_cols = [ 'current', 'rain', 'snowfall', "pressure", 'wind_force', "resist_ratio",
-       'FC', "LATITUDE", 'LONGITUDE', 'SOG', "DEPTH", "SPEED"]
-# df[transform_cols]
-minmax_scaler = minmax_scaler.fit(df[transform_cols].values)
-import pickle
-pickle.dump(minmax_scaler, open('minmax_scaler_2.pkl', 'wb'))
-df[transform_cols] = minmax_scaler.transform(df[transform_cols])
 
 df["prev_SOG"] = df.SOG.shift(periods=1)
 df["acceleration"] = ((df.SOG - df.prev_SOG))
@@ -106,8 +66,28 @@ df["distance"] = ((df["goal_long"]-df["LONGITUDE"])**2 + \
                              (df["goal_lat"]-df["LATITUDE"])**2 )**0.5
 
 
-df = one_hot(df, ["season", "weathercode", "wind_direc"], normalize = True)
-# df = df[df["adversarial"]==0]
+df = convention.transform_value(df)
+
+df = convention.one_hot(df, ["season", "weathercode", "wind_direc"], normalize = True)
+df = df[df["adversarial"]==0]
 
 
-df.to_csv("data/Features/feature4.csv", index=False)
+df.to_csv("data/Features/feature2.csv", index=False)
+
+
+cols = ["Time2", "SPEED", "HEADING", "MODE", "turn", "acceleration",
+        'current', 'rain', 'snowfall', 'wind_force', 'wind_direc',
+            "resist_ratio","change_x_factor", "change_y_factor", "countDown", 
+            "is_weekday", 'direction',"season", "departure_hour",
+            "FC","SOG","LONGITUDE","LATITUDE"]
+
+df = df[cols]
+
+
+# df.iloc[0, df.columns.get_loc('prev_HEADING')] = df.iloc[1, df.columns.get_loc('prev_HEADING')]
+# df.iloc[0, df.columns.get_loc('prev_SOG')] = df.iloc[1, df.columns.get_loc('prev_SOG')]
+df.iloc[0, df.columns.get_loc('turn')] = df.iloc[1, df.columns.get_loc('turn')]
+df.iloc[0, df.columns.get_loc('acceleration')] = 0
+
+df.to_csv("data/Features/feature3.csv", index=False)
+

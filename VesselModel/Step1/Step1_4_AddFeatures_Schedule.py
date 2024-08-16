@@ -56,7 +56,7 @@ tripSchedule["RoundedDT"] = tripSchedule["departure"].dt.floor('5T')
 tripSchedule["RoundedTime"] = tripSchedule["departure"].dt.floor('5T').dt.time
 # tripSchedule
 
-tripSchedule.to_csv("data/Features/tripSchedule.csv", index=False)
+# tripSchedule.to_csv("data/Features/tripSchedule.csv", index=False)
 
 NH_trips = tripSchedule[tripSchedule["direction"] == 'N-H']
 HN_trips = tripSchedule[tripSchedule["direction"] == 'H-N']
@@ -117,10 +117,10 @@ NH_trips["ScheduleTime"] = NH_trips.apply(assignSchedule, axis = 1, possibleSche
 NH_trips_NaN = NH_trips[NH_trips.ScheduleTime.isna()]
 NH_trips_NaN['ScheduleTime'] = NH_trips_NaN['RoundedDT']
 NH_trips.update(NH_trips_NaN)
-NH_trips.head(30)
+# NH_trips.head(30)
 
 # len(NH_trips[NH_trips["ScheduleTime"].notna()])
-# len(NH_trips[HN_trips["ScheduleTime"].isna()])
+# len(NH_trips[NH_trips["ScheduleTime"].isna()])
 # len(NH_trips)
 
 # Setup for H-N trips
@@ -198,9 +198,6 @@ df["season"] = df['datetime'].apply(lambda x: get_season(x.month))
 df["current"] = df["STW"] - df["SOG"]
 # df.current
 
-# df.to_csv('~/BCFerryData/tmp1.csv', index=False)
-# df = pd.read_csv('~/BCFerryData/tmp1.csv')
-# df = pd.read_csv('~/BCFerryData/queenCsvOut_withID.csv',skiprows=[1])
 
 # weather related features
 # temperature, humidity, pressure, precipitation, rain, snowfall
@@ -259,7 +256,7 @@ df = df.drop(["date"], axis=1)
 # plt.show()
 
 # df.to_csv("~/BCFerryData/feature1_tmp2.csv", index=False)
-df.to_csv("data/Features/feature1_tmp2.csv", index=False)
+df.to_csv("data/Features/feature1_tmp2_2.csv", index=False)
 
 # len(df[pd.isna(df)].trip_id) # return 324164
 # df

@@ -8,10 +8,10 @@ from scipy.stats import gaussian_kde
 
 
 # df = pd.read_csv("~/BCFerryData/feature1.csv")
-df = pd.read_csv("data/Features/feature_tmp2.csv")
+df = pd.read_csv("data/Features/feature1_tmp2_2.csv")
 
 
-plt.scatter(df.LONGITUDE, df.LATITUDE, s=1)
+plt.scatter(df.LONGITUDE, df.LATITUDE, c = df.MODE, s=1)
 plt.xlabel('Longitude')
 plt.ylabel('Latitude')
 plt.legend()
@@ -72,7 +72,7 @@ def mode_change_inbetween(df, speed_thresh=10):
     trip_lists = []
     for trip_id in list(df.trip_id.unique()):
         tmp_df = df[df.trip_id==trip_id]
-        tmp_df = tmp_df[(tmp_df.LONGITUDE>-123.8) & (tmp_df.LONGITUDE<-123.4)]
+        tmp_df = tmp_df[(tmp_df.LONGITUDE>-123.84) & (tmp_df.LONGITUDE<-123.4)]
         tmp_df["MODE_diff"] = abs(tmp_df["MODE"]-tmp_df["MODE"].shift(periods=-1))
         mode_change = tmp_df["MODE_diff"].sum()
         if mode_change > 0:
@@ -101,25 +101,30 @@ def travel_distance(df, thresh = 1.3):
 def get_adversarial(df):
     reduce_speed = mode_change_inbetween(df)
     reroute = travel_distance(df)
-    adversarial = list(set(reduce_speed+reroute))
+    adversarial = list(set(reduce_speed + reroute + detourTrip))
     return adversarial, reroute, reduce_speed
 
 adversarial, reroute, reduce_speed = get_adversarial(df)
 df["adversarial"] = df["trip_id"].apply(lambda x: 1 if x in adversarial else 0)
 
-len(adversarial) #310 trips
+len(adversarial) #361 trips
 # len(df.trip_id.unique()) #3129 trips
-samples = reroute
-plt.scatter(df[df.trip_id.isin(samples)].LONGITUDE, df[df.trip_id.isin(samples)].LATITUDE, c = df[df.trip_id.isin(samples)].STW,s=1)
+samples = reduce_speed
+# plt.scatter(df[df.trip_id.isin(samples)].LONGITUDE, df[df.trip_id.isin(samples)].LATITUDE, c = df[df.trip_id.isin(samples)].STW,s=1)
+plt.scatter(df[df.trip_id.isin(samples)].LONGITUDE, df[df.trip_id.isin(samples)].LATITUDE, c = df[df.trip_id.isin(samples)].MODE,s=1)
 
 samples = adversarial
 plt.scatter(df[df.trip_id.isin(samples)].LONGITUDE, df[df.trip_id.isin(samples)].LATITUDE, c = df[df.trip_id.isin(samples)].STW, s=1)
 
+# len(detourTrip)
+# len(adversarial)
 
 plt.xlabel('Longitude')
 plt.ylabel('Latitude')
 plt.legend()
 plt.show()
+
+plt.scatter(df[~df.trip_id.isin(samples)].LONGITUDE, df[~df.trip_id.isin(samples)].LATITUDE, c = df[~(df.trip_id.isin(samples))].MODE,s=1)
 
 #1143,1591,2048,2630
 # print(reroute) #[135, 1032, 1039, 1075, 1101, 1143, 1312, 1591, 1825, 1904, 2048, 2142, 2208, 2399, 2630, 3001, 3216, 3245, 3351, 3373, 3671, 3742]
@@ -136,6 +141,7 @@ plt.show()
 
 # df.to_csv("~/BCFerryData/feature1.csv", index=False)
 df.to_csv("data/Features/feature1.csv", index=False)
+# df.to_csv("data/Features/feature1.csv", index=False)
 
 
 

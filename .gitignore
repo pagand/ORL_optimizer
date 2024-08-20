@@ -22,6 +22,9 @@ RL/logs/
 RL/.DS_Store
 
 
+VesselModel/Step x/
+VesselModel/Step 1/__pycache__/
+
 *wandb*
 *__pycache__*
 *__tmp__*

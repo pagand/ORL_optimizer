@@ -23,7 +23,10 @@ RL/.DS_Store
 
 
 VesselModel/Step x/
-VesselModel/Step 1/__pycache__/
+VesselModel/Step1/__pycache__/
+VesselModel/Step1/convention.py
+data/Features/
+VesselModel/Step3/
 
 *wandb*
 *__pycache__*

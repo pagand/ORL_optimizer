@@ -70,93 +70,114 @@ def evaluate(
         returns.append(total_reward)
         steps.append(step+1)
     init_obs = np.array(init_obs)
-    #print("steps", steps)
+    print("gym steps", steps)
     return np.array(returns), init_obs, steps
 
+def hopper_is_done(state_):
+    healthy_state_range=(-100.0, 100.0)
+    healthy_z_range=(0.7, float("inf"))
+    healthy_angle_range=(-0.2, 0.2)
+    
+    z, angle = state_[0:2]
+    state = state_[1:]
+    #print("z", z, "angle", angle, "state", state)
+
+    min_state, max_state = healthy_state_range
+    min_z, max_z = healthy_z_range
+    min_angle, max_angle = healthy_angle_range
+
+    healthy_state = np.all(np.logical_and(min_state < state, state < max_state))
+    healthy_z = min_z < z < max_z
+    healthy_angle = min_angle < angle < max_angle
+
+    is_healthy = all((healthy_state, healthy_z, healthy_angle))
+    return not is_healthy
 
 # with Simulated env
+@torch.no_grad()
 def evaluate_simulator(
     env: env_model.MyEnv,
     actor: nn.Module,
     num_episodes: int,
     init_obs: np.ndarray,
-    steps: np.ndarray,
-    sim_reward_min: float,
-    sim_reward_max: float,
+    step_limit: int,
+    total_steps: int,
+    elbo_cutoff: float,
     device: torch.device,
-    step_limit: int = 1e8
 ):
-    returns = []
-    elbos = []
-    for i in trange(num_episodes, desc="Eval Simulator", leave=False):
-        for _ in range(3):
-            obs = init_obs[i:i+1, :]
-            # add a very small perturbation to the initial state
-            obs += np.random.uniform(-1e-2, 1e-2, obs.shape)
+    rewards = []
+    step = 0
+    need_init = True
+    steps = []
+    for i in trange(total_steps, desc="Eval Simulator", leave=False):
+        if need_init:
+            total_reward = 0.0
+            itrajectory = np.random.randint(0, init_obs.shape[0])
+            obs = init_obs[itrajectory:itrajectory+1, :]
+            # use a random init obs
+            obs = np.random.randn(*obs.shape)
             obs = Tensor(obs).to(device)
             env.reset(obs)
-            done = False
-            total_reward = 0.0
-            total_elbo = 0.0
-            step = 0
-            while (not done) and (step < step_limit) and (step < steps[i]):
-                obs = obs.to(device)
-                with torch.no_grad():
-                    action = actor(obs).detach()
-                obs, reward, done,  prob, elbo, discounted_reward, *_ = env.step(action, use_sensitivity=True)
-                #print("step", step, "reward", reward)
-                #done = is_done_walker2d(obs[0])
-                total_reward += float(reward)
-                #total_elbo += float(elbo)
-                step+=1
-                
-                #print("sim reward", reward, "total_reward", total_reward, "step", step, "done", done)   
-            if not np.isnan(total_reward) and total_reward >= sim_reward_min and total_reward <= sim_reward_max:
-                returns.append(total_reward)
-                #elbos.append(total_elbo)
-                
-                break
-    #print("elbos", elbos)
-    return np.array(returns)
+            need_init = False
+
+        action = actor(obs)
+        obs, reward, done,  prob, elbo, discounted_reward, *_ = env.step(action, 
+                            use_sensitivity=True)
+            #print("step", step, "reward", reward)
+            #done = is_done_walker2d(obs[0])
+        total_reward += float(reward.cpu())
+            #total_elbo += float(elbo)
+
+        step+=1
+        # let step > ??? to stabilize the elbo values
+        if (step>15) and (done or step >= step_limit or elbo > elbo_cutoff):
+            #print("step", step, "total_reward", total_reward, "done", done, "elbo", elbo)
+            if step > 20:
+                rewards.append(total_reward)
+                steps.append(step)
+            need_init = True
+            step = 0                
+            
+    print("sim steps", steps)
+    if len(rewards) == 0:
+        rewards = [0.0]
+    return np.array(rewards)
 
 
 # add simulator data to replay buffer (sensitivity and reward penalization)
+@torch.no_grad()
 def augment_replay_buffer(
     rbuffer: ReplayBuffer,
     env: env_model.MyEnv,
     actor: nn.Module,
-    num_episodes: int,
     init_obs: np.ndarray,
-    steps: np.ndarray,
-    sim_reward_min: float,
-    sim_reward_max: float,    
+    step_limit: int,
+    total_steps: int,
     reward_penalize: bool,
     sensitivity_threshold: float,
+    elbo_cutoff: float,
+    elbo_threshold: float,
     device: torch.device,
-    step_limit: int = 1e8
 ):
     returns = []
-    elbos = []
-    elen = init_obs.shape[0]
-    for i in trange(num_episodes, desc="Augment Data", leave=False):
-        k = i % elen
-        for _ in range(3):
-            obs = init_obs[k:k+1, :]
-            # add a very small perturbation to the initial state
-            obs += np.random.uniform(-1e-2, 1e-2, obs.shape)
+    need_init = True
+    for i in trange(total_steps, desc="Augment Data", leave=False):
+        if need_init:
+            e_data = []
+            total_reward = 0.0
+            itrajectory = np.random.randint(0, init_obs.shape[0])
+            obs = init_obs[itrajectory:itrajectory+1, :]
+            # use a random init value
+            obs = np.random.randn(*obs.shape)
             obs = Tensor(obs).to(device)
             env.reset(obs)
-            done = False
-            total_reward = 0.0
-            total_elbo = 0.0
             step = 0
-            e_data = []
-            while (not done) and (step < step_limit) and (step < steps[k]):
-                obs = obs.to(device)
-                with torch.no_grad():
-                    action = actor(obs).detach()
-                obs_, reward, done,  prob, elbo, discounted_reward, s_states, s_rewards = env.step(action, use_sensitivity=True)
-                e_data.append([obs.cpu().numpy(), 
+            need_init = False
+
+        action = actor(obs)
+        obs_, reward, done,  prob, elbo, discounted_reward, s_states, s_rewards = env.step(action, 
+                            use_sensitivity=True)
+        e_data.append([obs.cpu().numpy(), 
                                action.cpu().numpy(), 
                                obs_.cpu().numpy(), 
                                reward.item(), 
@@ -164,39 +185,63 @@ def augment_replay_buffer(
                                elbo.item(), 
                                discounted_reward.item(), 
                                s_states.item(), 
-                               s_rewards.item()])
-                #print("e_data", len(e_data))
-                obs = obs_
-                #print("step", step, "reward", reward)
-                #done = is_done_walker2d(obs[0])
-                total_reward += float(reward)
-                #total_elbo += float(elbo)
-                step+=1
-                
-                #print("sim reward", reward, "total_reward", total_reward, "step", step, "done", done)   
-            if np.isnan(total_reward) or total_reward < sim_reward_min or total_reward > sim_reward_max:
-                continue
-            returns.append(total_reward)
-            # add to replay buffer
-            for c in range(len(e_data)-1):
-                done = c == len(e_data) - 2
-                if reward_penalize:
-                    reward_ = e_data[c][6]
-                else:
-                    reward_ = e_data[c][3]
-                s_states = e_data[c][7]
-                if s_states > sensitivity_threshold:
-                    continue
-                rbuffer.add_transition_np(
-                    e_data[c][0],
-                    e_data[c][1],
-                    e_data[c][2],
-                    e_data[c+1][1],
-                    reward_,
-                    done                    
-                )
-            break
-    #print("elbos", elbos)
+                               s_rewards.item()])   
+        total_reward += float(reward.cpu())
+        step+=1
+     
+        # let step > ??? to stabilize the elbo values
+        if (step>15) and (done or step >= step_limit or elbo > elbo_cutoff):
+            #print("step", step, "total_reward", total_reward, "done", done, "elbo", elbo)
+            if step > 20:
+                returns.append(total_reward)
+                # add to replay buffer
+                reward_1 = 0.0
+                reward_diffs = []
+                for c in range(len(e_data)-1):
+                    done = c == len(e_data) - 2
+                    elbo = e_data[c][5]
+                    if elbo > elbo_threshold:
+                        continue
+                    if reward_penalize:
+                        reward_ = e_data[c][6]
+                    else:
+                        reward_ = e_data[c][3]
+                    reward_diff = reward_ - reward_1
+                    reward_diffs.append(reward_diff)
+                    reward_1 = reward_                    
+                    s_states = e_data[c][7]
+                    if s_states > sensitivity_threshold:
+                        continue
+                    rbuffer.add_transition_np(
+                        e_data[c][0],
+                        e_data[c][1],
+                        e_data[c][2],
+                        e_data[c+1][1],
+                        reward_,
+                        done,
+                        type="myenv",
+                    )
+                    if reward_diff > 0.2:
+                        rbuffer.add_transition_np(
+                            e_data[c][0],
+                            e_data[c][1],
+                            e_data[c][2],
+                            e_data[c+1][1],
+                            reward_,
+                            done,
+                            type="highreward",
+                        )
+                    if reward_diff < -0.1:
+                        rbuffer.add_transition_np(
+                            e_data[c][0],
+                            e_data[c][1],
+                            e_data[c][2],
+                            e_data[c+1][1],
+                            reward_,
+                            done,
+                            type="lowreward",
+                        )
+            need_init = True
     return np.array(returns)
 
 def is_done_walker2d(state):

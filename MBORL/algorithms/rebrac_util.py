@@ -62,12 +62,21 @@ class Config:
     vae_chkpt_path: str
     use_gym_env: bool 
     eval_step_limit: int 
+    eval_total_steps: int
+    augment_step_limit: int
+    augment_total_steps: int    
     save_chkpt_path: str 
     save_chkpt_per: int
     sim_kappa: float
-    sim_reward_min: float
-    sim_reward_max: float
     replay_buffer_size: int
+    highreward_buffer_size: int
+    lowreward_buffer_size: int
+    d4rl_ratio: float
+    myenv_ratio: float
+    highreward_ratio: float
+    lowreward_ratio: float
+    elbo_cutoff: float
+    elbo_threshold: float
     use_augment_data: bool 
     augment_per: int 
     augment_episode: int 

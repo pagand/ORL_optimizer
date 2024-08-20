@@ -13,6 +13,8 @@ ActType = TypeVar("ActType")
 def str_to_floats(data: str) -> np.ndarray:
     return np.array([float(x) for x in data.split(",")])
 
+loss_func = nn.MSELoss()
+
 class Dynamics(nn.Module):
     '''
     input:
@@ -34,62 +36,63 @@ class Dynamics(nn.Module):
     dynamics_nn: nn.Module
 
     def __init__(self, state_dim: int, action_dim: int, hidden_dim: int, sequence_num: int, 
-                 out_state_num: int, future_num: int, use_future_act: bool = False, 
-                 device: torch.device = 'cuda', train_gamma = 0.99):
+                 future_num: int, device: torch.device = 'cuda', train_gamma = 0.99):
         super().__init__()
         self.input_dim = state_dim + action_dim
-        self.lstm = nn.LSTM(input_size=self.input_dim, hidden_size=hidden_dim, num_layers=sequence_num+out_state_num-1, 
+        self.lstm = nn.LSTM(input_size=self.input_dim, hidden_size=hidden_dim, num_layers=sequence_num, 
                             batch_first=True)
-        self.mlps = nn.ModuleList(
-            [nn.Sequential(
+        self.mlps =nn.Sequential(
                 nn.LayerNorm(hidden_dim),
                 nn.Linear(hidden_dim, hidden_dim),
                 nn.ReLU(),
                 nn.Dropout(0.2),
-                ) for _ in range(1)])
+                )
 
-        self.linear_state = nn.Linear(hidden_dim, state_dim * out_state_num)
-        self.linear_reward = nn.Linear(hidden_dim, out_state_num)
+        self.linear_state = nn.Linear(hidden_dim, state_dim * future_num)
+        self.linear_reward = nn.Linear(hidden_dim, future_num)
+        #self.linear_done = nn.Linear(hidden_dim, future_num)
         self.future_num = future_num
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.sequence_num = sequence_num
-        self.out_state_num = out_state_num
-        self.use_future_act = use_future_act
         self.device = device
+        # (future_num, state_dim)
         self.state_gammas = Tensor([[train_gamma**j for i in range(state_dim)] for j in range(future_num)]).to(device)
         self.reward_gammas = Tensor([train_gamma**i for i in range(future_num)]).unsqueeze(1).to(device)
+        #self.dones_gammas = Tensor([train_gamma**i for i in range(future_num)]).unsqueeze(1).to(device)
+        # print("state_gammas", self.state_gammas.shape, "reward_gammas", self.reward_gammas.shape, "dones_gammas", self.dones_gammas.shape)
  
-    def forward(self, state, action, next_state=None, next_reward=None, is_eval=False, is_ar=False):
-        s_ = torch.empty((state.shape[0], 0, self.state_dim*self.out_state_num)).to(self.device)
-        r_ = torch.empty((state.shape[0], 0, self.out_state_num)).to(self.device)
+    def forward(self, state, action, next_state=None, next_reward=None):
         state_= state[:,:self.sequence_num,:].to(self.device)
-        state = state.to(self.device)
-        action = action.to(self.device)
-        for i in range(self.future_num):
-            #print("action shape", action.shape, "state_ shape", state_.shape)
-            #print("i", i, "action[] shape", action[:, i:i+self.sequence_num, :].shape)
-            x = torch.cat((action[:,i:i+self.sequence_num,:], state_), dim=-1)
-            x, _ = self.lstm(x)
-            x = x[:,-1,:]
-            for mlp in self.mlps:
-                x = mlp(x) + x
-            s = self.linear_state(x).unsqueeze(1)
-            r = self.linear_reward(x).unsqueeze(1)
-            s_ = torch.cat((s_, s), dim=1)
-            r_ = torch.cat((r_, r), dim=1)
-            if is_ar:
-                state_ = torch.cat((state_[:,1:,:], s[:,:,:self.state_dim]), dim=1)
-            else:
-                state_ = state[:,i+1:i+self.sequence_num+1,:]
+        action_ = action[:,:self.sequence_num].to(self.device)
+        #print("action shape", action.shape, "state_ shape", state_.shape)
+        #print("i", i, "action[] shape", action[:, i:i+self.sequence_num, :].shape)
+        x1 = torch.cat((action_, state_), dim=-1)
+        x2, _ = self.lstm(x1)
+        x3 = x2[:,-1,:]
+        for mlp in self.mlps:
+            x4 = mlp(x3) + x3
+        # (batch, 1, state_dim * future_num)
+        s = self.linear_state(x4).unsqueeze(1)
+        r = self.linear_reward(x4).unsqueeze(1)
+        #d = torch.sigmoid(self.linear_done(x4)).unsqueeze(1)
+
+        s_ = torch.cat([s[:,:,i*self.state_dim:(i+1)*self.state_dim] for i in range(self.future_num)], dim=1).to(self.device)
+        r_ = torch.cat([r[:,:,i:i+1] for i in range(self.future_num)], dim=1).to(self.device)
+        #d_ = torch.cat([d[:,:,i:i+1] for i in range(self.future_num)], dim=1).to(self.device)
 
         if next_state is not None and next_reward is not None:
-            next_state_diff = (((s_ - next_state) * self.state_gammas) ** 2).flatten(1,-1).sum(-1).mean()
-            reward_diff = (((r_ - next_reward) * self.reward_gammas) ** 2).flatten(1,-1).sum(-1).mean()
+            next_state_diff = (((s_ - next_state) * self.state_gammas) ** 2).flatten(1, -1).sum(-1).mean()
+            #print("r_", r_.shape, "next_reward", next_reward.shape)
+            reward_diff = (((r_ - next_reward) * self.reward_gammas) ** 2).flatten(1, -1).sum(-1).mean()
+            #done_diff = (((d_ - next_done) * self.dones_gammas) ** 2).flatten(1, -1).sum(-1).mean()
+            #next_state_diff = loss_func(s_, next_state)
+            #reward_diff = loss_func(r_, next_reward)
+            #done_diff = loss_func(d_, next_done)
             loss = next_state_diff + reward_diff
-            return (s_, r_, loss)
+            return s_, r_, loss
         
-        return (s_, r_)
+        return s_, r_, None
     
 class GRU_update(nn.Module):
     def __init__(self, input_size, state_dim, hidden_size=1, output_size=4, num_layers=1, prediction_horizon=5, 
@@ -113,10 +116,12 @@ class GRU_update(nn.Module):
         self.train_gamma = train_gamma
         self.state_gammas = Tensor([[train_gamma**j for i in range(state_dim)] for j in range(future_num)]).to(device)
         self.reward_gammas = Tensor([train_gamma**i for i in range(future_num)]).unsqueeze(1).to(device)
+        #self.dones_gammas = Tensor([train_gamma**i for i in range(future_num)]).unsqueeze(1).to(device)
 
+    # predicted_values (batchsize, future_num, state_dim+1)
+    # past_time_features (batchsize, sequence_num, state_dim+action_dim)
     def forward(self, predicted_values, past_time_features, next_state = None, next_reward = None):
-        # predicted_values (256, 5, 4)
-        # past_time_features (256, 25, 12)
+        # xy (batch, 1, state_dim+1)
         xy = torch.zeros(size=(past_time_features.shape[0], 1, self.output_size)).float().to(self.device)
         hx = past_time_features.reshape(-1, 1, self.hidden_size)
         hx = hx.permute(1, 0, 2)
@@ -134,13 +139,43 @@ class GRU_update(nn.Module):
             xy = xy + d_xy
             out_wp.append(xy)
         pred_wp = torch.stack(out_wp, dim=1).squeeze(2)
+        state_pred = pred_wp[:,:,:self.state_dim]
+        reward_pred = pred_wp[:,:,self.state_dim:self.state_dim+1]
+        #done_pred = pred_wp[:,:,self.state_dim+1:]
         # (256, 5, 4)
         if next_state is not None and next_reward is not None:
-            next_state_diff = (((pred_wp[:,:,:self.state_dim] - next_state) * self.state_gammas) ** 2).flatten(1,-1).sum(-1).mean()
-            reward_diff = (((pred_wp[:,:,self.state_dim:] - next_reward) * self.reward_gammas) ** 2).flatten(1,-1).sum(-1).mean()
-            loss = next_state_diff + reward_diff
-            return pred_wp, loss
-        return pred_wp
+            next_state_diff = (((state_pred - next_state) * self.state_gammas) ** 2).flatten(1,-1).sum(-1).mean()
+            reward_diff = (((reward_pred - next_reward) * self.reward_gammas) ** 2).flatten(1,-1).sum(-1).mean()
+            #done_diff = (((done_pred - next_done) * self.dones_gammas) ** 2).flatten(1,-1).sum(-1).mean()
+            loss = next_state_diff + reward_diff # + done_diff
+            return state_pred, reward_pred, loss
+        return state_pred, reward_pred, None
+    
+class SeqModel(nn.Module):
+
+    def __init__(self, use_gru_update: bool, state_dim: int, action_dim: int, hidden_dim: int, sequence_num: int, future_num: int, 
+                 device: torch.device, train_gamma: float):
+        super().__init__()
+        self.dynamics_nn = Dynamics(state_dim, action_dim, hidden_dim, sequence_num, future_num, device, train_gamma)
+        if use_gru_update:
+            self.gru_nn = GRU_update(state_dim+1, state_dim, (state_dim+action_dim)*sequence_num, state_dim+1, 1, future_num, device, train_gamma)
+        self.use_gru_update = use_gru_update
+        self.device = device
+        self.state_dim = state_dim
+        self.action_dim = action_dim
+        self.sequence_num = sequence_num
+        self.future_num = future_num
+        
+    def forward(self, state, action, next_state=None, next_reward=None, ):
+        next_state_pred, next_reward_pred, loss  = self.dynamics_nn(state, action, next_state, next_reward)
+        if self.use_gru_update:
+            assert state.shape[1] >= self.sequence_num
+            input = torch.cat((state[:,:self.sequence_num], action[:,:self.sequence_num]), dim=-1)
+            pred_features = torch.cat((next_state_pred, next_reward_pred), dim=-1)
+            next_state_pred, next_reward_pred, loss = self.gru_nn(pred_features, input, next_state, next_reward)
+        if next_state is not None and next_reward is not None:
+            return next_state_pred, next_reward_pred, loss
+        return next_state_pred, next_reward_pred, None
 
 class VAE(nn.Module):
     def __init__(self, input_dim, latent_dim, hidden_dim):
@@ -216,7 +251,7 @@ def hopper_is_done(state_):
     
     z, angle = state_[0:2]
     state = state_[1:]
-    print("z", z, "angle", angle, "state", state)
+    #print("z", z, "angle", angle, "state", state)
 
     min_state, max_state = healthy_state_range
     min_z, max_z = healthy_z_range
@@ -258,23 +293,18 @@ class MyEnv:
         self.load_from_chkpt(chkpt_path)
         self.load_vae_from_chkpt(vae_chkpt_path)
         self.kappa = kappa
-        self.dynamics_nn.to(device)
         self.x = 0
 
     def load_from_chkpt(self, chk_path: str) -> None:
         checkpoint = torch.load(chk_path, map_location=self.device)
         self.config_dict = checkpoint['config']
-        self.dynamics_nn = Dynamics(self.state_dim, self.action_dim,
+        self.seq_model = SeqModel(self.config_dict["use_gru_update"], self.state_dim, self.action_dim,
                                     self.config_dict['hidden_dim'], self.config_dict['sequence_num'], 
-                                    self.config_dict['out_state_num'], future_num=1,
-                                    use_future_act=False, device=self.device)
-        self.gru_nn = GRU_update(self.state_dim+1, self.state_dim, (self.state_dim+self.action_dim)*self.config_dict['sequence_num'], 
-                                 self.state_dim+1, 1, 1).to(self.device)
-        self.dynamics_nn.load_state_dict(checkpoint["dynamics_nn"])
-        self.gru_nn.load_state_dict(checkpoint["gru_nn"])
+                                    future_num=self.config_dict['future_num'],
+                                    device=self.device, train_gamma=self.config_dict['gamma']).to(self.device)
+        self.seq_model.load_state_dict(checkpoint["seq_model"])
         self.sequence_num = self.config_dict['sequence_num']
         self.state_mean = Tensor(str_to_floats(self.config_dict['state_mean'])).to(self.device)
-        #print("state_mean", self.state_mean)
         self.state_std = Tensor(str_to_floats(self.config_dict['state_std'])).to(self.device)
         self.reward_mean = self.config_dict['reward_mean']
         self.reward_std = self.config_dict['reward_std']
@@ -283,10 +313,9 @@ class MyEnv:
         checkpoint = torch.load(chk_path, map_location=self.device)
         self.threshold = checkpoint["threshold"]
         self.vae_config = checkpoint["config"]        
-        self.vae = VAE(self.state_dim+self.action_dim, self.vae_config["vae_latent_dim"], self.vae_config['vae_hidden_dim'])
+        self.vae = VAE((self.state_dim+self.action_dim)*self.vae_config["vae_sequence_num"], self.vae_config["vae_latent_dim"], 
+                       self.vae_config['vae_hidden_dim']).to(self.device)
         self.vae.load_state_dict(checkpoint["vae"])
-        self.vae.to(self.device)
-
 
     def normalize_state(self, state: Tensor) -> Tensor:
         return (state - self.state_mean) / self.state_std
@@ -301,72 +330,58 @@ class MyEnv:
         return reward * self.reward_std + self.reward_mean
 
     def reset(self, obs: ObsType) -> None:
-        self.states = self.normalize_state(obs)
-        self.actions = torch.empty((0, self.action_dim))
-        self.rewards = torch.empty((0))
+        self.states = torch.zeros((self.sequence_num-1, self.state_dim)).to(self.device)
+        obs_ = self.normalize_state(obs).to(self.device)
+        self.states = torch.cat((self.states, obs_), dim=0)
+        self.actions = torch.zeros((self.sequence_num-1, self.action_dim)).to(self.device)
+        self.rewards = torch.empty((0)).to(self.device)
         self.istep = 0
-        self.states = self.states.to(self.device)
-        self.actions = self.actions.to(self.device)
-        self.rewards = self.rewards.to(self.device)
+        self.elbos = []
         self.x = 0
 
+    @torch.no_grad()
     def _cal_sensitivity(self, states: ObsType, actions: ActType, next_state: ObsType, reward, K=10, sigma=0.01):
         # generate perturbations of size (K, states.shape[0], states.shape[1])
         states_noise = torch.normal(mean=0, std=sigma, size=(K, states.shape[1], states.shape[2])).to(self.device)
         actions_noise = torch.normal(mean=0, std=sigma, size=(K, actions.shape[1], actions.shape[2])).to(self.device)
         noisy_states = states + states_noise
         noisy_actions = actions + actions_noise
-        with torch.inference_mode():
-            # (1, 1, 17) , (1, 1, 1)
-            noisy_nstate, noisy_reward = self.dynamics_nn(noisy_states, noisy_actions, is_eval=True, is_ar=True)
+        noisy_nstate, noisy_reward, _ = self.seq_model(noisy_states, noisy_actions)
         
-        if self.config_dict['use_gru_update'] and self.istep >= self.sequence_num:
-            input = torch.cat((noisy_states, noisy_actions), dim=-1)
-            input = input[:, :self.sequence_num]
-            pred_features = torch.cat((noisy_nstate.detach(), noisy_reward.detach()), dim=-1)
-            with torch.inference_mode():
-                g_pred = self.gru_nn(pred_features, input)
-            g_states_pred = g_pred[:, :, :self.state_dim]
-            g_rewards_pred = g_pred[:, :, self.state_dim:]
-
-            noisy_nstate = g_states_pred.squeeze(1)
-            noisy_reward = g_rewards_pred.squeeze(1)
-        else:
-            noisy_nstate = noisy_nstate.squeeze(1)
-            noisy_reward = noisy_reward.squeeze(1)
+        noisy_nstate = noisy_nstate.squeeze(1)
+        noisy_reward = noisy_reward.squeeze(1)
 
         # calculate sensitivity
         s1 = torch.var(noisy_nstate - next_state, dim=0).mean()
         s2 = torch.var(noisy_reward - reward, dim=0).mean()
         return s1, s2
         
+    @torch.no_grad()
     def step(self, action: ActType, use_sensitivity: bool = False) -> Tuple[ObsType, float, bool]:
         action = action.to(self.device)
         self.actions = torch.cat((self.actions, action), dim=0)
-        steps = min(len(self.states), self.sequence_num)
-        states_ = self.states[-steps:].unsqueeze(0)
-        actions_ = self.actions[-steps:].unsqueeze(0)
-        with torch.inference_mode():
-            # (1, 1, 17) , (1, 1, 1)
-            next_state, reward = self.dynamics_nn(states_, actions_, is_eval=True, is_ar=True)
+        assert self.states.shape[0] == self.actions.shape[0]
+        assert self.states.shape[0] >= self.sequence_num
+        states_ = self.states[-self.sequence_num:].unsqueeze(0)
+        actions_ = self.actions[-self.sequence_num:].unsqueeze(0)
+
+        self.seq_model.eval()
+        next_state, reward, _ = self.seq_model(states_, actions_)
         
-        if self.config_dict['use_gru_update'] and self.istep >= self.sequence_num:
-            input = torch.cat((states_, actions_), dim=2)
-            input = input[:, :self.sequence_num]
-            pred_features = torch.cat((next_state.detach(), reward.detach()), dim=2)
-            with torch.inference_mode():
-                g_pred = self.gru_nn(pred_features, input)
-            g_states_pred = g_pred[:, :, :self.state_dim]
-            g_rewards_pred = g_pred[:, :, self.state_dim:]
+        next_state = next_state.squeeze(1)
+        reward = reward.squeeze(1)
 
-            next_state = g_states_pred.squeeze(1)
-            reward = g_rewards_pred.squeeze(1)
-        else:
-            next_state = next_state.squeeze(1)
-            reward = reward.squeeze(1)
-
-        with torch.inference_mode():
-            elbo = self.vae.estimate(torch.cat((self.states[-1].unsqueeze(0), self.actions[-1].unsqueeze(0)), dim=1))
+        #calculate elbo
+        elbo = 0.0
+        vae_sequence_num = self.vae_config["vae_sequence_num"]
+        if self.states.shape[0] >= vae_sequence_num:
+            #print("states", self.states.shape, "actions", self.actions.shape)
+            vae_states = self.states[-vae_sequence_num:].unsqueeze(0)
+            vae_actions = self.actions[-vae_sequence_num:].unsqueeze(0)
+            vae_input = torch.cat((vae_states, vae_actions), dim=-1)
+            vae_input = vae_input.view(1, -1).to(self.device)
+            self.vae.eval()
+            elbo = self.vae.estimate(vae_input)
 
         #print("next_state", next_state.shape, "reward", reward.shape)
         #print("self.states", self.states.shape, "self.actions", self.actions.shape, "self.rewards", self.rewards.shape)
@@ -387,33 +402,44 @@ class MyEnv:
         # (N)
         self.rewards = torch.cat((self.rewards, reward), dim=0)
         self.istep += 1
-        next_state = next_state.detach()
-        reward = reward.detach()
 
         next_state = self.denormalize_state(next_state)
         reward = self.denormalize_reward(reward)
 
-        done = (self.istep >= self.max_episode_steps)
-        elbo = elbo.detach()
+        self.elbos.append(elbo)
+        done = False
+        if "hopper" in self.chkpt_path:
+            done = hopper_is_done(next_state[0])
+        
+        '''
+        if done:
+            print("istep", self.istep, "d1", done1, "d2", done2, "d3", done3, "elbo", elbo, "cutoff", elbo_cutoff)
+            print("elbos mean", torch.mean(torch.tensor(self.elbos)).item(), "elbos std", torch.std(torch.tensor(self.elbos)).item(),
+                    "elbos max", torch.max(torch.tensor(self.elbos)).item(), "elbos min", torch.min(torch.tensor(self.elbos)).item())
+        '''
         #print("threshold", self.threshold)
-        prob = Tensor([1/(1+self.kappa*(e-self.threshold)) if e > self.threshold else 1 for e in elbo]).to(self.device)
+        prob = torch.tensor([1/(1+self.kappa*(e-self.threshold)) if e > self.threshold else 1.0 for e in elbo]).to(self.device)
         discounted_reward = reward * prob
         #print("next_state", next_state, "reward", reward, "done", done, "prob", prob, "elbo", elbo, "discounted_reward", discounted_reward)
         #if "hopper" in self.chkpt_path:
         #    done = hopper_is_done(next_state[0])                                                                                                                                                                                                                                                                 
         return next_state, reward, done, prob, elbo, discounted_reward, s_state, s_reward                                                                                                                                                                                                         
 
-def main():
-    chkpt_path = "/home/james/sfu/ORL_optimizer/TORL/config/halfcheetah/halfcheetah_medium_v2_ar.pt"
-    vae_chkpt_path = "/home/james/sfu/ORL_optimizer/TORL/config/halfcheetah/halfcheetah_medium_v2_vae.pt"
+def test_hopper():
+    chkpt_path = "MBORL/config/hopper/hopper_medium_v2_ar.pt"
+    vae_chkpt_path = "MBORL/config/hopper/hopper_medium_v2_vae.pt"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    env = MyEnv(chkpt_path, 17, 6, device, vae_chkpt_path=vae_chkpt_path)
-    obs = torch.randn(1, 17).to(device)
+    state_dim = 11
+    action_dim = 3
+    env = MyEnv(chkpt_path, state_dim, action_dim, device, vae_chkpt_path=vae_chkpt_path)
+    obs = torch.randn(1, state_dim).to(device)
     print("init state", obs.cpu().numpy())
     env.reset(obs)
-    for i in range(10):
-        action = torch.randn(1, 6).to(device)
-        next_state, reward, done, prob, elbo, discounted_reward = env.step(action)
+    done = False
+    i = 0
+    while not done:
+        action = torch.randn(1, action_dim).to(device)
+        next_state, reward, done, prob, elbo, discounted_reward, s_state, s_reward = env.step(action)
         print("step", i+1)
         print("action", action.cpu().numpy())
         print("next_state", next_state.cpu().numpy())
@@ -422,6 +448,14 @@ def main():
         print("prob", prob.cpu().numpy())
         print("elbo", elbo.cpu().numpy())
         print("discounted_reward", discounted_reward.cpu().numpy())
+        print("s_state", s_state, "s_reward", s_reward)
+        print("")
+        done = hopper_is_done(next_state[0]) or (i>1 and elbo > 50.0)
+        i += 1
+
+def main():
+    test_hopper()
+
 
 if __name__ == "__main__":
     main()

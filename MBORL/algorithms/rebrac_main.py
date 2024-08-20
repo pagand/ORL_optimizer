@@ -92,7 +92,8 @@ def main(config: Config):
     for epoch in t:
         for i in range(config.num_updates_on_epoch):
             #batch = sample_batch_d4rl(dataset, config.batch_size, randomize=False, device=device)
-            batch = rbuffer.sample(config.batch_size)
+            batch = rbuffer.sample(config.batch_size, config.d4rl_ratio, config.myenv_ratio, 
+                                   config.highreward_ratio, config.lowreward_ratio)
             update_critic(actor_state, critic_state, batch, metrics,
                             config.gamma, config.critic_bc_coef, config.tau, 
                             config.policy_noise, config.noise_clip)            
@@ -113,6 +114,7 @@ def main(config: Config):
         '''
 
         # evaluations
+        sim_return_mean = 0.0
         if epoch % config.eval_every == 0 or epoch == config.num_epochs - 1:
             if config.use_gym_env:
                 eval_returns, init_obs, steps = evaluate(
@@ -130,19 +132,19 @@ def main(config: Config):
                 actor_state.get_model(),
                 config.eval_episodes,
                 init_obs,
-                steps,
-                config.sim_reward_min,
-                config.sim_reward_max,
+                config.eval_step_limit,
+                config.eval_total_steps,
+                config.elbo_cutoff,
                 device,
-                config.eval_step_limit
             )
-            sim_normalized_score = eval_env.get_normalized_score(sim_returns) * 100.0
-
+            #sim_normalized_score = eval_env.get_normalized_score(sim_returns) * 100.0
+            #sim_returns *= 100.0
+            if np.mean(sim_returns) > 0:
+                sim_return_mean = np.mean(sim_returns)
 
             if config.use_gym_env:
-                sim_rewards.append(np.mean(sim_returns))
-                gym_rewards.append(np.mean(eval_returns))      
-                rsqr = 0.0
+  
+                #rsqr = 0.0
                 #if len(sim_rewards) > 1:
                 #    rsqr = r2_score(sim_rewards, gym_rewards)            
                 wandb.log(
@@ -152,31 +154,25 @@ def main(config: Config):
                         "eval/gym_return_std": np.std(eval_returns),
                         "eval/gym_normalized_score_mean": np.mean(normalized_score),
                         "eval/gym_normalized_score_std": np.std(normalized_score),
-                        "eval/sim_return_mean": np.mean(sim_returns),
-                        "eval/sim_return_std": np.std(sim_returns),
-                        "eval/sim_normalized_score_mean": np.mean(sim_normalized_score),
-                        "eval/sim_normalized_score_std": np.std(sim_normalized_score),
+                        "eval/sim_return_mean": sim_return_mean,
                         #"eval/sim_gym_rsqr": rsqr,
                     }
                 )              
                 t.set_postfix(
                 {
                     "RM": np.mean(eval_returns),
-                    "SM": np.mean(sim_returns),
+                    "SM": sim_return_mean,
                 })
             else:
                 wandb.log(
                     {
                         "epoch": epoch,
-                        "eval/sim_return_mean": np.mean(sim_returns),
-                        "eval/sim_return_std": np.std(sim_returns),
-                        "eval/sim_normalized_score_mean": np.mean(sim_normalized_score),
-                        "eval/sim_normalized_score_std": np.std(sim_normalized_score),
+                        "eval/sim_return_mean": sim_return_mean,
                     }
                 )
                 t.set_postfix(
                 {
-                    "SM": np.mean(sim_returns),
+                    "SM": sim_return_mean,
                 })
         # augment data
         if config.use_augment_data and epoch % config.augment_per == 0 and epoch > 0:
@@ -184,15 +180,14 @@ def main(config: Config):
                 rbuffer,
                 myenv,
                 actor_state.get_model(),
-                config.augment_episode,
                 init_obs,
-                steps,
-                config.sim_reward_min,
-                config.sim_reward_max,
+                config.augment_step_limit,
+                config.augment_total_steps,
                 config.reward_penalize,
                 config.sensitivity_threshold,
+                config.elbo_cutoff,
+                config.elbo_threshold,
                 device,
-                step_limit=config.eval_step_limit
             )        
 
 

@@ -12,8 +12,8 @@ import pyrallis
 import uuid
 from tqdm.auto import trange
 
-from env_util import Config, qlearning_dataset2, get_env_info, sample_batch_offline, get_rsquare, str_to_floats
-from env_model import Dynamics, GRU_update
+from env_util import *
+from env_model import SeqModel
 
 
 from mpl_interactions import ioff, panhandler, zoom_factory
@@ -68,184 +68,200 @@ def main(config: Config):
     state_mean = str_to_floats(config.state_mean)
     state_std = str_to_floats(config.state_std)
     env = gym.make(dsnames[0])
-    _, _, data_test, *_ = qlearning_dataset2(dsnames)
-    N = data_test['state'].shape[0]
+    _, _, data_test, *_ = qlearning_dataset3(dsnames)
+    N = len(data_test['state'])
+    test_N = N
     state_dim, action_dim = get_env_info(env)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    dynamics_nn = Dynamics(state_dim=state_dim, action_dim=action_dim, hidden_dim=config.hidden_dim,
-                            sequence_num=config.sequence_num, out_state_num=config.out_state_num,
-                            future_num=config.future_num, device=device)
-    gru_nn = GRU_update(state_dim+1, state_dim, (state_dim+action_dim)*config.sequence_num, state_dim+1, 1, config.future_num)
-    if os.path.exists(config.chkpt_path_nar):
-        checkpoint = torch.load(config.chkpt_path_nar, map_location=device)
-        dynamics_nn.load_state_dict(checkpoint["dynamics_nn"])
-        gru_nn.load_state_dict(checkpoint["gru_nn"])
+    #device = torch.device('cpu')
+    tragectory_idx = N-2 # whic tragectory to plot
+    tlen = len(data_test['state'][tragectory_idx])
+    #print("reward", data_test['reward'][tragectory_idx])
+    states_true = np.array(data_test['state'][tragectory_idx][config.sequence_num:tlen-config.future_num+1])
+    rewards_true = np.array(data_test['reward'][tragectory_idx][config.sequence_num:tlen-config.future_num+1])
+    states_true = states_true.reshape(1, -1, state_dim)
+    rewards_true = rewards_true.reshape(1, -1)
+    #print("states_true", states_true.shape, "rewards_true", rewards_true.shape)
+    ############################ is_ar = False, single trajectory
+    chkpt_path = config.chkpt_path_ar
+    if os.path.exists(chkpt_path):
+        checkpoint = torch.load(chkpt_path, map_location=device)
         config_dict = checkpoint["config"]
-        print("Checkpoint loaded from", config.chkpt_path_nar)
+        seqModel = SeqModel(config_dict["use_gru_update"], state_dim, action_dim, config_dict["hidden_dim"],
+                            sequence_num=config_dict["sequence_num"], future_num=config_dict["future_num"], 
+                            device=device, train_gamma=config_dict["gamma"]).to(device)
+        seqModel.load_state_dict(checkpoint["seq_model"])        
+        print("Checkpoint loaded from", chkpt_path)
     else:
-        print("No checkpoint found at", config.chkpt_path_nar)
+        print("No checkpoint found at", chkpt_path)
         return
 
-    dynamics_nn.to(device)
-    gru_nn.to(device)
- 
-    states, actions, next_states, rewards = sample_batch_offline(
-            data_test, 1, config.sequence_num, config.future_num, 
-            config.out_state_num, randomize=config.eval_randomize)
-    rewards = rewards.to(device)
-    states = states.to(device)
-    actions = actions.to(device)
-    next_states = next_states.cpu().detach().numpy()
-    with torch.inference_mode():
-        next_states_pred_nar, rewards_pred_nar = dynamics_nn(states, actions, is_eval=True, is_ar=False)
-    if config.use_gru_update:
-        input = torch.cat((states, actions), dim=2)
-        input = input[:, :config.sequence_num]
-        pred_features = torch.cat((next_states_pred_nar.detach(), rewards_pred_nar.detach()), dim=2)
-        with torch.inference_mode():
-            g_pred = gru_nn(pred_features, input)
-        g_states_pred = g_pred[:, :, :state_dim]
-        g_rewards_pred = g_pred[:, :, state_dim:]
-        next_states_pred_nar = g_states_pred
-        rewards_pred_nar = g_rewards_pred
-
-    next_states_pred_nar = next_states_pred_nar.cpu().detach().numpy()
-    rewards_pred_nar = rewards_pred_nar.cpu().detach().numpy()
-    ############################################################## batch nar
-    seq_idx = 0
-    ss_pred_nar = torch.empty((0, config.future_num, state_dim)).to(device)
-    sr_pred_nar = torch.empty((0, config.future_num, 1)).to(device)
-    ns_pred_nar = torch.empty((0, config.future_num, state_dim))
-    nr_pred_nar = torch.empty((0, config.future_num, 1))
-    while seq_idx < N-1:
-        states1, actions1, next_states1, rewards1, seq_idx = sample_batch_offline(
+    states_plot_nar = np.empty((1, 0, state_dim))
+    rewards_plot_nar = np.empty((1, 0))
+    for u in range(0, tlen-config.sequence_num-config.future_num+1):
+        states, actions, rewards = sample_batch_offline2(
                 data_test, 1, config.sequence_num, config.future_num, 
-                config.out_state_num, randomize=config.eval_randomize, seq_idx=seq_idx)
-        states1 = states1.to(device)
-        actions1 = actions1.to(device)
+                tragectory_idx=tragectory_idx, step_idx=u, device=device)
+        rewards = rewards.to(device)
+        states = states[:, :config.sequence_num].to(device)
+        actions = actions[:, :config.sequence_num].to(device)
         with torch.inference_mode():
-            ss_pred_nar_, sr_pred_nar_ = dynamics_nn(states1, actions1, is_eval=True, is_ar=False)
-        if config.use_gru_update:
-            input = torch.cat((states1, actions1), dim=2)
-            input = input[:, :config.sequence_num]
-            pred_features = torch.cat((ss_pred_nar_.detach(), sr_pred_nar_.detach()), dim=2)
+            seqModel.eval()
+            next_states_pred_nar, rewards_pred_nar, _ = seqModel(states, actions)
+
+        next_states_pred_nar = next_states_pred_nar.cpu().detach().numpy()
+        rewards_pred_nar = rewards_pred_nar.cpu().detach().numpy().reshape(1, -1)
+        states_plot_nar = np.concatenate((states_plot_nar, next_states_pred_nar[:, 0:1]), axis=1)
+        rewards_plot_nar = np.concatenate((rewards_plot_nar, rewards_pred_nar[:, 0:1]), axis=1)
+
+    ############################################################## batch nar
+    states_stat_true = np.empty((1, 0, state_dim))
+    rewards_stat_true = np.empty((1, 0))
+    states_stat_nar = np.empty((1, 0, state_dim))
+    rewards_stat_nar = np.empty((1, 0))
+    for tid in trange(test_N, desc="NAR", leave=False):
+    #for tid in trange(N, desc="NAR", leave=False):
+        #print("tid", tid, "N", N)
+        tlen_ = len(data_test['state'][tid])
+        states_stat_true = np.concatenate((states_stat_true, 
+                        np.array(data_test['state'][tid][config.sequence_num:tlen_-config.future_num+1]).reshape(1,-1,state_dim)), axis=1)
+        rewards_stat_true = np.concatenate((rewards_stat_true, 
+                        np.array(data_test['reward'][tid][config.sequence_num:tlen_-config.future_num+1]).reshape(1,-1)), axis=1)
+
+        for s in range(0, tlen_-config.sequence_num-config.future_num+1):
+            states, actions, rewards = sample_batch_offline2(
+                    data_test, 1, config.sequence_num, config.future_num, 
+                    tragectory_idx=tid, step_idx=s, device=device)
+            states = states[:, :config.sequence_num].to(device)
+            actions = actions[:, :config.sequence_num].to(device)
             with torch.inference_mode():
-                g_pred = gru_nn(pred_features, input)
-            g_states_pred = g_pred[:, :, :state_dim]
-            g_rewards_pred = g_pred[:, :, state_dim:]
-            ss_pred_nar_ = g_states_pred
-            sr_pred_nar_ = g_rewards_pred
-        ss_pred_nar = torch.cat((ss_pred_nar, ss_pred_nar_), dim=0)
-        sr_pred_nar = torch.cat((sr_pred_nar, sr_pred_nar_), dim=0)
-        ns_pred_nar = torch.cat((ns_pred_nar, next_states1), dim=0)
-        nr_pred_nar = torch.cat((nr_pred_nar, rewards1), dim=0)
-        #print("seq_idx", seq_idx, "N", N)
+                seqModel.eval()
+                ss_pred_nar_, sr_pred_nar_, _ = seqModel(states, actions)
+            ss_pred_nar_ = ss_pred_nar_.cpu().detach().numpy()
+            sr_pred_nar_ = sr_pred_nar_.cpu().detach().numpy().reshape(1, -1)
+            states_stat_nar = np.concatenate((states_stat_nar, ss_pred_nar_[:, 0:1]), axis=1)
+            rewards_stat_nar = np.concatenate((rewards_stat_nar, sr_pred_nar_[:, 0:1]), axis=1)
     
-    #print("ss_pred_nar", ss_pred_nar.shape, "sr_pred_nar", sr_pred_nar.shape, "ns_pred_nar", ns_pred_nar.shape, "nr_pred_nar", nr_pred_nar.shape)
-   
-    ss_pred_nar = ss_pred_nar.cpu().detach().numpy()
-    sr_pred_nar = sr_pred_nar.cpu().detach().numpy()
-    ns_pred_nar = ns_pred_nar.cpu().detach().numpy()
-    nr_pred_nar = nr_pred_nar.cpu().detach().numpy()
-    s_r2_nar = get_rsquare(ns_pred_nar, ss_pred_nar)
-    r_r2_nar = get_rsquare(nr_pred_nar, sr_pred_nar)
+    s_r2_nar = get_rsquare(states_stat_nar, states_stat_true)
+    r_r2_nar = get_rsquare(rewards_stat_nar, rewards_stat_true)
     print("State R^2 NAR:", s_r2_nar, "Reward R^2 NAR:", r_r2_nar)
     for i in range(0, state_dim):
-        rsqr_nar = get_rsquare(ns_pred_nar[:,:,i:i+1], ss_pred_nar[:,:,i:i+1])
+        rsqr_nar = get_rsquare(states_stat_nar[:,:,i:i+1], states_stat_true[:,:,i:i+1])
         print("state", i, "R^2 NAR:", rsqr_nar)
 
-    ##############################################################3
-    dynamics_nn = Dynamics(state_dim=state_dim, action_dim=action_dim, hidden_dim=config.hidden_dim,
-                            sequence_num=config.sequence_num, out_state_num=config.out_state_num,
-                            future_num=config.future_num, device=device)
-    gru_nn = GRU_update(state_dim+1, state_dim, (state_dim+action_dim)*config.sequence_num, state_dim+1, 1, config.future_num)
-    if os.path.exists(config.chkpt_path_ar):
-        checkpoint = torch.load(config.chkpt_path_ar, map_location=device)
-        dynamics_nn.load_state_dict(checkpoint["dynamics_nn"])
-        gru_nn.load_state_dict(checkpoint["gru_nn"])
+    ############################################################## is_ar = True, one trajectory
+    test_is_ar = True
+    chkpt_path = config.chkpt_path_ar
+    if os.path.exists(chkpt_path):
+        checkpoint = torch.load(chkpt_path, map_location=device)
         config_dict = checkpoint["config"]
-        print("Checkpoint loaded from", config.chkpt_path_ar)
+        seqModel = SeqModel(config_dict["use_gru_update"], state_dim, action_dim, config_dict["hidden_dim"],
+                            sequence_num=config_dict["sequence_num"], future_num=config_dict["future_num"], 
+                            device=device, train_gamma=config_dict["gamma"]).to(device)
+        seqModel.load_state_dict(checkpoint["seq_model"])
+        print("Checkpoint loaded from", chkpt_path)
     else:
-        print("No checkpoint found at", config.chkpt_path_ar)
+        print("No checkpoint found at", chkpt_path)
         return
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    dynamics_nn.to(device)
-    gru_nn.to(device)
-
-    with torch.inference_mode():
-        next_states_pred_ar, rewards_pred_ar = dynamics_nn(states, actions, is_eval=True, is_ar=True)
-    if config.use_gru_update:
-        input = torch.cat((states, actions), dim=2)
-        input = input[:, :config.sequence_num]
-        pred_features = torch.cat((next_states_pred_ar.detach(), rewards_pred_ar.detach()), dim=2)
+    states_plot_ar = np.empty((1, 0, state_dim))
+    rewards_plot_ar = np.empty((1, 0))
+    for u in range(0, tlen-config.sequence_num-config.future_num+1):
+        states, actions, rewards = sample_batch_offline2(
+                data_test, 1, config.sequence_num, config.future_num, 
+                tragectory_idx=tragectory_idx, step_idx=u, device=device)
+        if u == 0:
+            past_states = states[:, :config.sequence_num].to(device)
+        if test_is_ar:
+            states = past_states[:, -config.sequence_num:]
+        else:
+            states = states[:, :config.sequence_num].to(device)
+        actions = actions[:, :config.sequence_num].to(device)
+        
         with torch.inference_mode():
-            g_pred = gru_nn(pred_features, input)
-        g_states_pred = g_pred[:, :, :state_dim]
-        g_rewards_pred = g_pred[:, :, state_dim:]
+            seqModel.eval()
+            next_states_pred_ar, rewards_pred_ar, _ = seqModel(states, actions)
 
-        next_states_pred_ar = g_states_pred
-        rewards_pred_ar = g_rewards_pred
+        past_states = torch.cat((past_states, next_states_pred_ar[:, 0:1]), dim=1)
 
-    next_states_pred_ar = next_states_pred_ar.cpu().detach().numpy()
-    rewards_pred_ar = rewards_pred_ar.cpu().detach().numpy()
-
-    rewards = rewards.cpu().detach().numpy()
+        next_states_pred_ar = next_states_pred_ar.cpu().detach().numpy()
+        rewards_pred_ar = rewards_pred_ar.cpu().detach().numpy().reshape(1, -1)
+        states_plot_ar = np.concatenate((states_plot_ar, next_states_pred_ar[:, 0:1]), axis=1)
+        rewards_plot_ar = np.concatenate((rewards_plot_ar, rewards_pred_ar[:, 0:1]), axis=1)
 
     ############################################################## batch ar
-    seq_idx = 0
-    ss_pred_ar = torch.empty((0, config.future_num, state_dim)).to(device)
-    sr_pred_ar = torch.empty((0, config.future_num, 1)).to(device)
-    ns_pred_ar = torch.empty((0, config.future_num, state_dim))
-    nr_pred_ar = torch.empty((0, config.future_num, 1))
-    while seq_idx < N-1:
-        states2, actions2, next_states2, rewards2, seq_idx = sample_batch_offline(
-                data_test, 1, config.sequence_num, config.future_num, 
-                config.out_state_num, randomize=config.eval_randomize, seq_idx=seq_idx)
-        states2 = states2.to(device)
-        actions2 = actions2.to(device)
-        with torch.inference_mode():
-            ss_pred_ar_, sr_pred_ar_ = dynamics_nn(states2, actions2, is_eval=True, is_ar=True)
-        if config.use_gru_update:
-            input = torch.cat((states2, actions2), dim=2)
-            input = input[:, :config.sequence_num]
-            pred_features = torch.cat((ss_pred_ar_.detach(), sr_pred_ar_.detach()), dim=2)
+    states_stat_true = np.empty((1, 0, state_dim))
+    rewards_stat_true = np.empty((1, 0))
+    states_stat_ar = np.empty((1, 0, state_dim))
+    rewards_stat_ar = np.empty((1, 0))
+    for tid in trange(test_N, desc="AR", leave=False):
+    #for tid in trange(N, desc="NAR", leave=False):
+        #print("tid", tid, "N", N)
+        tlen_ = len(data_test['state'][tid])
+        if tlen_ < config.sequence_num+config.future_num:
+            continue
+        states_stat_true = np.concatenate((states_stat_true, 
+                        np.array(data_test['state'][tid][1:tlen_-config.future_num+1]).reshape(1,-1,state_dim)), axis=1)
+        rewards_stat_true = np.concatenate((rewards_stat_true, 
+                        np.array(data_test['reward'][tid][1:tlen_-config.future_num+1]).reshape(1,-1)), axis=1)
+
+        for s in range(0, tlen_-config.sequence_num-config.future_num+1):
+            _states, actions, rewards = sample_batch_offline2(
+                    data_test, 1, config.sequence_num, config.future_num, 
+                    tragectory_idx=tid, step_idx=s, device=device)
+            if s == 0:
+                past_states = torch.zeros(1, config.sequence_num-1, state_dim).to(device)
+                past_actions = torch.zeros(1, config.sequence_num-1, action_dim).to(device)
+                past_states = torch.cat((past_states, _states[:, 0:1]), dim=1)
+                past_actions = torch.cat((past_actions, actions[:, 0:1]), dim=1)
+                for i in range(config.sequence_num-1):
+                    states = past_states[:, -config.sequence_num:].to(device)
+                    actions = past_actions[:, -config.sequence_num:].to(device)
+
+                    with torch.inference_mode():
+                        seqModel.eval()
+                        ss_pred_ar_, sr_pred_ar_, _ = seqModel(states, actions)
+
+                    ss_pred_ar_ = ss_pred_ar_.detach()
+                    if test_is_ar:
+                        past_states = torch.cat((past_states, ss_pred_ar_[:, 0:1]), dim=1)
+                    else:
+                        past_states = torch.cat((past_states, _states[:, i+1:i+2]), dim=1)
+                    past_actions = torch.cat((past_actions, actions[:, i+1:i+2]), dim=1)
+                    states_stat_ar = np.concatenate((states_stat_ar, ss_pred_ar_[:, 0:1].cpu().detach().numpy()), axis=1)
+                    rewards_stat_ar = np.concatenate((rewards_stat_ar, sr_pred_ar_[:, 0:1].cpu().detach().numpy().reshape(1, -1)), axis=1)
+
+            if test_is_ar:
+                states = past_states[:, -config.sequence_num:]
+            else:
+                states = states[:, :config.sequence_num].to(device)
+            actions = actions[:, :config.sequence_num].to(device)
             with torch.inference_mode():
-                g_pred = gru_nn(pred_features, input)
-            g_states_pred = g_pred[:, :, :state_dim]
-            g_rewards_pred = g_pred[:, :, state_dim:]
-            ss_pred_ar_ = g_states_pred
-            sr_pred_ar_ = g_rewards_pred
-        ss_pred_ar = torch.cat((ss_pred_ar, ss_pred_ar_), dim=0)
-        sr_pred_ar = torch.cat((sr_pred_ar, sr_pred_ar_), dim=0)
-        ns_pred_ar = torch.cat((ns_pred_ar, next_states2), dim=0)
-        nr_pred_ar = torch.cat((nr_pred_ar, rewards2), dim=0)
-        #print("seq_idx", seq_idx)
+                seqModel.eval()
+                ss_pred_ar_, sr_pred_ar_, _ = seqModel(states, actions)
+
+            past_states = torch.cat((past_states, ss_pred_ar_[:, 0:1]), dim=1)
+
+            ss_pred_ar_ = ss_pred_ar_.cpu().detach().numpy()
+            sr_pred_ar_ = sr_pred_ar_.cpu().detach().numpy().reshape(1, -1)
+            states_stat_ar = np.concatenate((states_stat_ar, ss_pred_ar_[:, 0:1]), axis=1)
+            rewards_stat_ar = np.concatenate((rewards_stat_ar, sr_pred_ar_[:, 0:1]), axis=1)
     
-    #print("ss_pred_nar", ss_pred_nar.shape, "sr_pred_nar", sr_pred_nar.shape, "ns_pred_nar", ns_pred_nar.shape, "nr_pred_nar", nr_pred_nar.shape)
-   
-    ss_pred_ar = ss_pred_ar.cpu().detach().numpy()
-    sr_pred_ar = sr_pred_ar.cpu().detach().numpy()
-    ns_pred_ar = ns_pred_ar.cpu().detach().numpy()
-    nr_pred_ar = nr_pred_ar.cpu().detach().numpy()
-    s_r2_ar = get_rsquare(ns_pred_ar, ss_pred_ar)
-    r_r2_ar = get_rsquare(nr_pred_ar, sr_pred_ar)
+    s_r2_ar = get_rsquare(states_stat_ar, states_stat_true)
+    r_r2_ar = get_rsquare(rewards_stat_ar, rewards_stat_true)
     print("State R^2 AR:", s_r2_ar, "Reward R^2 AR:", r_r2_ar)
     for i in range(0, state_dim):
-        r2_ar = get_rsquare(ns_pred_ar[:,:,i:i+1], ss_pred_ar[:,:,i:i+1])
-        print("state", i, "R^2 AR:", r2_ar)
+        rsqr_ar = get_rsquare(states_stat_ar[:,:,i:i+1], states_stat_true[:,:,i:i+1])
+        print("state", i, "R^2 AR:", rsqr_ar)
 
-    ##############################################################3
-
-    plot_rewards(rewards, rewards_pred_nar, rewards_pred_ar)
+    
+    plot_rewards(rewards_true, rewards_plot_nar, rewards_plot_ar)
 
     #print("next_states", next_states.shape, "next_states_pred_nar", next_states_pred_nar.shape, "next_states_pred_ar", next_states_pred_ar.shape)
 
-    plot_states(next_states, next_states_pred_nar, next_states_pred_ar, 0)
+    plot_states(states_true, states_plot_nar, states_plot_ar, 0)
 
-    plot_states(next_states, next_states_pred_nar, next_states_pred_ar, 5)
-
-    plot_states(next_states, next_states_pred_nar, next_states_pred_ar, 10)
+    plot_states(states_true, states_plot_nar, states_plot_ar, 5)
 
 
 if __name__ == "__main__":

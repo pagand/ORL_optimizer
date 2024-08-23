@@ -292,9 +292,12 @@ def main():
     #load model
     # file_path = ["data/Checkpoints/{}/{}_epoch_{}_tf.pt".format(config.model_name, config.model_name, 44), 
     #                     "data/Checkpoints/{}/{}_epoch_{}_gru.pt".format(config.model_name, config.model_name, 44)]
-    model_name = "Model_v1_Iter_5"
-    file_path = ["data/Checkpoints/{}/{}_epoch_{}_tf.pt".format(model_name, model_name, 44),
-                "data/Checkpoints/{}/{}_epoch_{}_gru.pt".format(model_name, model_name, 44)]
+    # model_name = "Model_v1_Iter_5"
+    # file_path = ["data/Checkpoints/{}/{}_epoch_{}_tf.pt".format(model_name, model_name, 44),
+    #             "data/Checkpoints/{}/{}_epoch_{}_gru.pt".format(model_name, model_name, 44)]
+    model_name = "Model_v1_Iter_7"
+    file_path = ["data/Checkpoints/{}/{}_epoch_{}_tf.pt".format(model_name, model_name, 78),
+                "data/Checkpoints/{}/{}_epoch_{}_gru.pt".format(model_name, model_name, 78)]
     
     print("loading checkpoints: ", file_path[0], file_path[1])
     
@@ -309,7 +312,7 @@ def main():
 
     # predicted value
     # trip_id = env.trip_id
-    repeat = 2
+    repeat = 8
     for i in range(repeat):
         env.reset()
         print("---------- ", env.trip_id, "----------------")
@@ -394,11 +397,15 @@ def main():
         ax4.plot(range(25, len(sog_predicted[i])), sog_predicted[i][25:], label='predictions'.format(i=2))
         ax4.plot(range(25, len(sog_predicted[i])), sogs[i][25:], label='actuals'.format(i=1))
         ax4.legend(loc='best')
-        plt.savefig("Plot/gym_plot_{}.png".format(trip_ids[i]))
+        plt.savefig("Plot/gym_plot_7.{}.png".format(trip_ids[i]))
         plt.show()
     
-    for i in range(repeat):
-        plot(i) 
+    # for i in range(repeat):
+    #     plot(i) 
+    plot(0)
+    plot(1)
+    plot(6)
+    plot(7)
     print("done")
 
 

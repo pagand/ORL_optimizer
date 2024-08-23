@@ -99,9 +99,10 @@ def get_observation (df, feature_cols = time_feature + dynamic_feature + static_
         rewards.loc[len(rewards)-1,"reward2"] = rewards.loc[len(rewards)-1,"reward2"]+3        
         
         # rewards4 time out reward        
-        rewards["Time"] = rewards.index        
-        rewards.reset_index(inplace=True)
-        rewards["reward3"] = rewards["Time"].apply(lambda x: -0.1*((x-90)//10) if x > 100 else 0)
+        # rewards["Time"] = rewards.index        
+        # rewards.reset_index(inplace=True)
+        # rewards["reward3"] = rewards["Time"].apply(lambda x: -0.1*((x-90)//10) if x > 100 else 0)
+        rewards["reward3"] = rewards["countDown"].apply(lambda x: 0.1*x if x < 0 else 0)
         
         data_dict["rewards"] = (rewards[["reward1","reward2", "reward3"]]).to_numpy()
          # termination      
@@ -120,6 +121,6 @@ with open('data/rl_data.pkl', 'wb') as handle:
     pickle.dump(rl_data,handle)
 
 
-df[df["trip_id"] == 5][["Time2", "turn", "acceleration", "current", "rain", "snowfall", 
-                                   "wind_force", "wind_direc", "resist_ratio", "change_x_factor", "change_y_factor", "countDown",
-                                     "is_weekday", "direction", "season", "departure_hour", "FC", "SOG", "LONGITUDE", "LATITUDE"]].iloc[0]
+# df[df["trip_id"] ==14][["Time2", "turn", "acceleration", "current", "rain", "snowfall", 
+#                                    "wind_force", "wind_direc", "resist_ratio", "change_x_factor", "change_y_factor", "countDown",
+#                                      "is_weekday", "direction", "season", "departure_hour", "FC", "SOG", "LONGITUDE", "LATITUDE"]].iloc[25]

@@ -1,7 +1,7 @@
 project: ORL_optimizer
 group: env
 name: env_train_offline
-dataset_name: hopper-medium-v2,hopper-random-v2
+dataset_name: hopper-medium-v2,hopper-random-v2,hopper-expert-v2
 chkpt_path_nar: MBORL/config/hopper/hopper_medium_v2_nar.pt
 chkpt_path_ar: MBORL/config/hopper/hopper_medium_v2_ar.pt
 vae_chkpt_path: MBORL/config/hopper/hopper_medium_v2_vae.pt
@@ -9,12 +9,12 @@ load_chkpt: true
 save_chkpt_per: 5
 sequence_num: 10
 hidden_dim: 128
-future_num: 1
+future_num: 3
 num_epochs: 200
 min_updates_per_epoch: 1000
 eval_episodes: 100
 batch_size: 128
-dynamics_lr: 1e-7
+dynamics_lr: 3e-7
 dynamics_weight_decay: 1e-11
 eval_seed: 42
 train_seed:  0
@@ -22,13 +22,13 @@ eval_randomize: false
 train_randomize: false
 is_ar: true  # true: auto-regressive, false: non-auto-regressive
 holdout_per: 5
-holdout_num: 10
+holdout_num: 100
 use_gru_update: true
 state_mean: 1.3112686,-0.08469262,-0.53825426,-0.07201052,0.049344853,2.106582,-0.15014714,0.008785113,-0.28485158,-0.18539158,-0.28468254
 state_std: 0.17790356,0.05444648,0.2129813,0.14529777,0.61242145,0.8517834,1.4514914,0.675177,1.5362306,1.6160218,5.6071143
 reward_mean: 3.1088035
 reward_std: 0.8488912
-gamma: 0.5
+gamma: 1.0
 vae_hidden_dim: 1024
 vae_latent_dim: 5
 vae_sequence_num: 3

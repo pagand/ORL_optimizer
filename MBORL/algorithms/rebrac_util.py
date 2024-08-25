@@ -79,7 +79,6 @@ class Config:
     elbo_threshold: float
     use_augment_data: bool 
     augment_per: int 
-    augment_episode: int 
     sensitivity_threshold: float 
     reward_penalize: bool 
 

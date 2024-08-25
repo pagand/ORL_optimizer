@@ -98,6 +98,7 @@ def main(config: Config):
 
     states_plot_nar = np.empty((1, 0, state_dim))
     rewards_plot_nar = np.empty((1, 0))
+    hc = None
     for u in range(0, tlen-config.sequence_num-config.future_num+1):
         states, actions, rewards = sample_batch_offline2(
                 data_test, 1, config.sequence_num, config.future_num, 
@@ -107,7 +108,7 @@ def main(config: Config):
         actions = actions[:, :config.sequence_num].to(device)
         with torch.inference_mode():
             seqModel.eval()
-            next_states_pred_nar, rewards_pred_nar, _ = seqModel(states, actions)
+            next_states_pred_nar, rewards_pred_nar, hc, *_ = seqModel(states, actions, hc)
 
         next_states_pred_nar = next_states_pred_nar.cpu().detach().numpy()
         rewards_pred_nar = rewards_pred_nar.cpu().detach().numpy().reshape(1, -1)
@@ -127,7 +128,7 @@ def main(config: Config):
                         np.array(data_test['state'][tid][config.sequence_num:tlen_-config.future_num+1]).reshape(1,-1,state_dim)), axis=1)
         rewards_stat_true = np.concatenate((rewards_stat_true, 
                         np.array(data_test['reward'][tid][config.sequence_num:tlen_-config.future_num+1]).reshape(1,-1)), axis=1)
-
+        hc = None
         for s in range(0, tlen_-config.sequence_num-config.future_num+1):
             states, actions, rewards = sample_batch_offline2(
                     data_test, 1, config.sequence_num, config.future_num, 
@@ -136,7 +137,7 @@ def main(config: Config):
             actions = actions[:, :config.sequence_num].to(device)
             with torch.inference_mode():
                 seqModel.eval()
-                ss_pred_nar_, sr_pred_nar_, _ = seqModel(states, actions)
+                ss_pred_nar_, sr_pred_nar_, hc, *_ = seqModel(states, actions, hc)
             ss_pred_nar_ = ss_pred_nar_.cpu().detach().numpy()
             sr_pred_nar_ = sr_pred_nar_.cpu().detach().numpy().reshape(1, -1)
             states_stat_nar = np.concatenate((states_stat_nar, ss_pred_nar_[:, 0:1]), axis=1)
@@ -166,6 +167,7 @@ def main(config: Config):
 
     states_plot_ar = np.empty((1, 0, state_dim))
     rewards_plot_ar = np.empty((1, 0))
+    hc = None
     for u in range(0, tlen-config.sequence_num-config.future_num+1):
         states, actions, rewards = sample_batch_offline2(
                 data_test, 1, config.sequence_num, config.future_num, 
@@ -180,7 +182,7 @@ def main(config: Config):
         
         with torch.inference_mode():
             seqModel.eval()
-            next_states_pred_ar, rewards_pred_ar, _ = seqModel(states, actions)
+            next_states_pred_ar, rewards_pred_ar, hc, *_ = seqModel(states, actions, hc)
 
         past_states = torch.cat((past_states, next_states_pred_ar[:, 0:1]), dim=1)
 
@@ -198,54 +200,36 @@ def main(config: Config):
     #for tid in trange(N, desc="NAR", leave=False):
         #print("tid", tid, "N", N)
         tlen_ = len(data_test['state'][tid])
-        if tlen_ < config.sequence_num+config.future_num:
+        if tlen_ < config.future_num + 1:
             continue
         states_stat_true = np.concatenate((states_stat_true, 
                         np.array(data_test['state'][tid][1:tlen_-config.future_num+1]).reshape(1,-1,state_dim)), axis=1)
         rewards_stat_true = np.concatenate((rewards_stat_true, 
                         np.array(data_test['reward'][tid][1:tlen_-config.future_num+1]).reshape(1,-1)), axis=1)
 
-        for s in range(0, tlen_-config.sequence_num-config.future_num+1):
-            _states, actions, rewards = sample_batch_offline2(
-                    data_test, 1, config.sequence_num, config.future_num, 
-                    tragectory_idx=tid, step_idx=s, device=device)
-            if s == 0:
-                past_states = torch.zeros(1, config.sequence_num-1, state_dim).to(device)
-                past_actions = torch.zeros(1, config.sequence_num-1, action_dim).to(device)
-                past_states = torch.cat((past_states, _states[:, 0:1]), dim=1)
-                past_actions = torch.cat((past_actions, actions[:, 0:1]), dim=1)
-                for i in range(config.sequence_num-1):
-                    states = past_states[:, -config.sequence_num:].to(device)
-                    actions = past_actions[:, -config.sequence_num:].to(device)
+        past_states, past_actions, indices = sample_batch_init(data_test, 1, config.sequence_num,
+                                                            tragectory_idx=tid, left_align=True, device=device)
+        #print("past_states", past_states, "past_actions", past_actions, "indices", indices)
+        hc = None
+        for s in range(0, tlen_-config.future_num):
+            next_states, next_actions, next_rewards = sample_batch_offline3(
+                    data_test, 1, config.future_num, 
+                    tragectory_idx=tid, indices=indices, device=device)
 
-                    with torch.inference_mode():
-                        seqModel.eval()
-                        ss_pred_ar_, sr_pred_ar_, _ = seqModel(states, actions)
-
-                    ss_pred_ar_ = ss_pred_ar_.detach()
-                    if test_is_ar:
-                        past_states = torch.cat((past_states, ss_pred_ar_[:, 0:1]), dim=1)
-                    else:
-                        past_states = torch.cat((past_states, _states[:, i+1:i+2]), dim=1)
-                    past_actions = torch.cat((past_actions, actions[:, i+1:i+2]), dim=1)
-                    states_stat_ar = np.concatenate((states_stat_ar, ss_pred_ar_[:, 0:1].cpu().detach().numpy()), axis=1)
-                    rewards_stat_ar = np.concatenate((rewards_stat_ar, sr_pred_ar_[:, 0:1].cpu().detach().numpy().reshape(1, -1)), axis=1)
-
-            if test_is_ar:
-                states = past_states[:, -config.sequence_num:]
-            else:
-                states = states[:, :config.sequence_num].to(device)
-            actions = actions[:, :config.sequence_num].to(device)
+            states = past_states[:, -config.sequence_num:]
+            actions = past_actions[:, -config.sequence_num:]
             with torch.inference_mode():
                 seqModel.eval()
-                ss_pred_ar_, sr_pred_ar_, _ = seqModel(states, actions)
+                ss_pred_ar_, sr_pred_ar_, hc, *_ = seqModel(states, actions, hc)
 
             past_states = torch.cat((past_states, ss_pred_ar_[:, 0:1]), dim=1)
+            past_actions = torch.cat((past_actions, next_actions[:, 0:1]), dim=1)
 
             ss_pred_ar_ = ss_pred_ar_.cpu().detach().numpy()
             sr_pred_ar_ = sr_pred_ar_.cpu().detach().numpy().reshape(1, -1)
             states_stat_ar = np.concatenate((states_stat_ar, ss_pred_ar_[:, 0:1]), axis=1)
             rewards_stat_ar = np.concatenate((rewards_stat_ar, sr_pred_ar_[:, 0:1]), axis=1)
+            indices += 1
     
     s_r2_ar = get_rsquare(states_stat_ar, states_stat_true)
     r_r2_ar = get_rsquare(rewards_stat_ar, rewards_stat_true)
@@ -253,7 +237,6 @@ def main(config: Config):
     for i in range(0, state_dim):
         rsqr_ar = get_rsquare(states_stat_ar[:,:,i:i+1], states_stat_true[:,:,i:i+1])
         print("state", i, "R^2 AR:", rsqr_ar)
-
     
     plot_rewards(rewards_true, rewards_plot_nar, rewards_plot_ar)
 

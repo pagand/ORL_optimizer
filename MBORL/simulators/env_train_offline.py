@@ -69,71 +69,51 @@ def main(config: Config):
     N_holdout = len(data_holdout["state"])
     for epoch in t:
         update_cnt = 0
-        losses = np.array([])
+        losses1 = np.array([])
+        losses2 = np.array([])
         
         while update_cnt < config.min_updates_per_epoch:
             # choose a random number between 0 and N - batch_size
             idx = np.random.randint(0, N - config.batch_size)
             t_len = len(data_train["state"][idx])
-            if t_len < config.sequence_num + config.future_num:
+            if t_len < config.future_num + 1:
                 continue
+            lalign = epoch % 2 == 0
+            past_states, past_actions, indices = sample_batch_init(data_train, config.batch_size, config.sequence_num, 
+                                                                    tragectory_idx=idx, left_align=lalign, device=device)
             
-            for u in range(0, t_len-config.sequence_num-config.future_num+1):
-                _states, actions, rewards= sample_batch_offline2(data_train,
+            for u in range(t_len-config.future_num):
+                hc = None
+                next_states, next_actions, next_rewards= sample_batch_offline3(data_train,
                                                                 config.batch_size, 
-                                                                config.sequence_num, 
                                                                 config.future_num, 
                                                                 tragectory_idx=idx, 
-                                                                step_idx=u,
+                                                                indices=indices,
                                                                 device=device)
-                if u == 0:
-                    past_states = torch.zeros(config.batch_size, config.sequence_num-1, state_dim).to(device)
-                    past_actions = torch.zeros(config.batch_size, config.sequence_num-1, action_dim).to(device)
-                    past_states = torch.cat((past_states, _states[:, 0:1]), dim=1)
-                    past_actions = torch.cat((past_actions, actions[:, 0:1]), dim=1)
-                    for i in range(config.sequence_num-1):
-                        states = past_states[:, -config.sequence_num:].to(device)
-                        actions = past_actions[:, -config.sequence_num:].to(device)
-                        next_states = _states[:, i+1:i+1+config.future_num].to(device)
-                        next_rewards = rewards[:, i+1:i+1+config.future_num].unsqueeze(-1).to(device)
-
-                        seqModel.train()
-                        next_states_pred, rewards_pred, loss = seqModel(states, actions, next_state=next_states, 
+                states = past_states[:, -config.sequence_num:].to(device)
+                actions = past_actions[:, -config.sequence_num:].to(device)
+                seqModel.train()
+                next_states_pred, rewards_pred, hc, loss1, loss2 = seqModel(states, actions, hc, next_state=next_states, 
                                                                         next_reward=next_rewards)
-                        seq_optimizer.zero_grad()
-                        loss.backward()
-                        seq_optimizer.step()
-                        losses = np.append(losses, loss.cpu().detach().numpy())
-                        next_states_pred = next_states_pred.detach()
-                        if config.is_ar:
-                            past_states = torch.cat((past_states, next_states_pred[:, 0:1]), dim=1)
-                        else:
-                            past_states = torch.cat((past_states, _states[:, i+1:i+2]), dim=1)
-                        past_actions = torch.cat((past_actions, actions[:, i+1:i+2]), dim=1)
 
-                if config.is_ar:
-                    states = past_states[:, -config.sequence_num:].to(device)
-                else:
-                    states = _states[:, :config.sequence_num].to(device)
-                actions = actions[:, :config.sequence_num].to(device)
-                next_states = _states[:, config.sequence_num:].to(device)
-                next_rewards = rewards[:, config.sequence_num:].unsqueeze(-1).to(device)
-                #next_dones = dones.unsqueeze(-1).to(device)
-
-                seqModel.train()      
-                next_states_pred, rewards_pred, loss = seqModel(states, actions, next_state=next_states, 
-                                                                next_reward=next_rewards)
                 seq_optimizer.zero_grad()
-                loss.backward()
+                loss2.backward()
+                #loss1.backward()                
                 seq_optimizer.step()
-                losses = np.append(losses, loss.cpu().detach().numpy())
+
+                losses1 = np.append(losses1, loss1.cpu().detach().numpy())
+                if loss2 is not None:
+                    losses2 = np.append(losses2, loss2.cpu().detach().numpy())
                 next_states_pred = next_states_pred.detach()
                 past_states = torch.cat((past_states, next_states_pred[:, 0:1]), dim=1)
+                past_actions = torch.cat((past_actions, next_actions[:, 0:1]), dim=1)
+                indices += 1
+                #print("indices", indices)
             # end of for loop
             update_cnt += u
 
-        wandb.log({"model_loss_mean": np.mean(losses),
-                    "model_loss_std": np.std(losses),
+        wandb.log({"training_loss1_mean": np.mean(losses1),
+                    "training_loss2_mean": np.mean(losses2),
         })
 
         if epoch>0 and config.save_chkpt_per>0 and (epoch % config.save_chkpt_per == 0 or epoch == config.num_epochs-1):
@@ -144,76 +124,62 @@ def main(config: Config):
 
         #evaluate holdout data
         if config.holdout_per>0 and (epoch % config.holdout_per == 0 or epoch == config.num_epochs-1):
+            seqModel.use_gru_update = config.use_gru_update
             states_stat_true = np.empty((1, 0, state_dim))
             rewards_stat_true = np.empty((1, 0))
             states_stat_ar = np.empty((1, 0, state_dim))
             rewards_stat_ar = np.empty((1, 0))
             tids = np.random.choice(N_holdout, config.holdout_num, replace=False)
+            losses1 = np.array([])
+            losses2 = np.array([])
             for id in trange(config.holdout_num, desc="AR", leave=False):
             #for tid in trange(N, desc="NAR", leave=False):
                 #print("tid", tid, "N", N)
                 tid = tids[id]
                 tlen_ = len(data_holdout['state'][tid])
-                if tlen_ < config.sequence_num + config.future_num:
+                hc = None
+                if tlen_ < config.future_num + 1:
                     continue
+
                 states_stat_true = np.concatenate((states_stat_true, 
                                 np.array(data_holdout['state'][tid][1:tlen_-config.future_num+1]).reshape(1,-1,state_dim)), axis=1)
                 rewards_stat_true = np.concatenate((rewards_stat_true, 
                                 np.array(data_holdout['reward'][tid][1:tlen_-config.future_num+1]).reshape(1,-1)), axis=1)
 
-                for s in range(0, tlen_-config.sequence_num-config.future_num+1):
-                    _states, actions, rewards = sample_batch_offline2(
-                            data_holdout, 1, config.sequence_num, config.future_num, 
-                            tragectory_idx=tid, step_idx=s, device=device)
-                    if s == 0:
-                        past_states = torch.zeros(1, config.sequence_num-1, state_dim).to(device)
-                        past_actions = torch.zeros(1, config.sequence_num-1, action_dim).to(device)
-                        past_states = torch.cat((past_states, _states[:, 0:1]), dim=1)
-                        past_actions = torch.cat((past_actions, actions[:, 0:1]), dim=1)
-                        for i in range(config.sequence_num-1):
-                            states = past_states[:, -config.sequence_num:].to(device)
-                            actions = past_actions[:, -config.sequence_num:].to(device)
-                            next_states = _states[:, i+1:i+1+config.future_num].to(device)
-                            next_rewards = rewards[:, i+1:i+1+config.future_num].unsqueeze(-1).to(device)
+                past_states, past_actions, indices = sample_batch_init(data_holdout, 1, config.sequence_num, 
+                                                                    tragectory_idx=tid, left_align=True, device=device)
+                for s in range(tlen_-config.future_num):
+                    next_states, next_actions, next_rewards = sample_batch_offline3(
+                            data_holdout, 1, config.future_num, 
+                            tragectory_idx=tid, indices=indices, device=device)
+                    states = past_states[:, -config.sequence_num:].to(device)
+                    actions = past_actions[:, -config.sequence_num:].to(device)
 
-                            with torch.inference_mode():
-                                seqModel.eval()
-                                ss_pred_ar_, sr_pred_ar_, _ = seqModel(states, actions)
-                            ss_pred_ar_ = ss_pred_ar_.detach()
-                            if config.is_ar:
-                                past_states = torch.cat((past_states, ss_pred_ar_[:, 0:1]), dim=1)
-                            else:
-                                past_states = torch.cat((past_states, _states[:, i+1:i+2]), dim=1)
-                            past_actions = torch.cat((past_actions, actions[:, i+1:i+2]), dim=1)
-                            states_stat_ar = np.concatenate((states_stat_ar, ss_pred_ar_[:, 0:1].cpu().detach().numpy()), axis=1)
-                            rewards_stat_ar = np.concatenate((rewards_stat_ar, sr_pred_ar_[:, 0:1].squeeze(-1).cpu().detach().numpy()), axis=1)
-
-                    if config.is_ar:
-                        states = past_states[:, -config.sequence_num:]
-                    else:
-                        states = _states[:, :config.sequence_num].to(device)
-                    actions = actions[:, :config.sequence_num].to(device)
                     with torch.inference_mode():
                         seqModel.eval()
-                        ss_pred_ar_, sr_pred_ar_, _ = seqModel(states, actions)
-
+                        ss_pred_ar_, sr_pred_ar_, hc, loss1, loss2 = seqModel(states, actions, hc, next_states, next_rewards)
+                    losses1 = np.append(losses1, loss1.cpu().detach().numpy())
+                    if loss2 is not None:
+                        losses2 = np.append(losses2, loss2.cpu().detach().numpy())
+                    ss_pred_ar_ = ss_pred_ar_.detach()
                     past_states = torch.cat((past_states, ss_pred_ar_[:, 0:1]), dim=1)
-
-                    ss_pred_ar_ = ss_pred_ar_.cpu().detach().numpy()
-                    sr_pred_ar_ = sr_pred_ar_.cpu().detach().numpy().reshape(1, -1)
-                    states_stat_ar = np.concatenate((states_stat_ar, ss_pred_ar_[:, 0:1]), axis=1)
-                    rewards_stat_ar = np.concatenate((rewards_stat_ar, sr_pred_ar_[:, 0:1]), axis=1)
+                    past_actions = torch.cat((past_actions, next_actions[:, 0:1]), dim=1)
+                    states_stat_ar = np.concatenate((states_stat_ar, ss_pred_ar_[:, 0:1].cpu().detach().numpy()), axis=1)
+                    rewards_stat_ar = np.concatenate((rewards_stat_ar, sr_pred_ar_[:, 0:1].squeeze(-1).cpu().detach().numpy()), axis=1)
+                    indices += 1
                 #print("states_stat_true", states_stat_true.shape, "states_stat_ar", states_stat_ar.shape)
                 #print("rewards_stat_true", rewards_stat_true.shape, "rewards_stat_ar", rewards_stat_ar.shape)
                 #print("states_stat_true", states_stat_true.shape, "states_stat_ar", states_stat_ar.shape)
             s_r2_ar = get_rsquare(states_stat_ar, states_stat_true)
             r_r2_ar = get_rsquare(rewards_stat_ar, rewards_stat_true)
                 
-            wandb.log({"holdout_states_r2": s_r2_ar,
-                            "holdout_rewards_r2": r_r2_ar,
+            wandb.log({"validation_states_r2": s_r2_ar,
+                            "validation_rewards_r2": r_r2_ar,
+                            "validation_loss1_mean": np.mean(losses1),
+                            "validation_loss2_mean": np.mean(losses2),
                     })
             
-        t.set_description(f"ML:{np.mean(losses):.3f} SR:{s_r2_ar:.3f} RR:{r_r2_ar:.3f}")
+        t.set_description(f"ML:{np.mean(losses2):.3f} SR:{s_r2_ar:.3f} RR:{r_r2_ar:.3f}")
 
     wandb.finish()
     print("Checkpoint saved to", chkpt_path)

@@ -29,24 +29,23 @@ train_seed: 0
 chkpt_path: MBORL/config/hopper/hopper_medium_v2_ar.pt
 vae_chkpt_path: MBORL/config/hopper/hopper_medium_v2_vae.pt
 use_gym_env: True   # no gym env
-eval_step_limit: 1000
+eval_step_limit: 1005
 eval_total_steps: 5000
-augment_step_limit: 1000
+augment_step_limit: 1005
 augment_total_steps: 5000
-save_chkpt_path: MBORL/config/hopper/__tmp__/medium_v2_actor
+save_chkpt_path: MBORL/__tmp__/rebrac_hopper_medium_v2.pt
 save_chkpt_per: 10
 sim_kappa: 0.01
 replay_buffer_size: 50000
 highreward_buffer_size: 50000
 lowreward_buffer_size: 50000
-d4rl_ratio: 0.7
-myenv_ratio: 0.0
-highreward_ratio: 0.0
-lowreward_ratio: 0.3
-elbo_cutoff: 36.0
-elbo_threshold: 30.0
+d4rl_ratio: 0.5
+myenv_ratio: 0.4
+highreward_ratio: 0.05
+lowreward_ratio: 0.05
+elbo_cutoff: 30.0
+elbo_threshold: 20.0
 use_augment_data: True   # no data to replay buffer
-augment_per: 10
-augment_episode: 10
+augment_per: 20
 sensitivity_threshold: 0.05
 reward_penalize: False

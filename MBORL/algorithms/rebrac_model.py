@@ -119,10 +119,10 @@ class EnsembleCritic(nn.Module):
         return q_values
     
 class TrainState:
-    def __init__(self, model, optimizer):
+    def __init__(self, model, target_model, optimizer):
         self.model = model
         self.optimizer = optimizer
-        self.target_model = deepcopy(model)
+        self.target_model = target_model
 
     def get_model(self):
         return self.model

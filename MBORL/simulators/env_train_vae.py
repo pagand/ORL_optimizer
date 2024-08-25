@@ -47,7 +47,7 @@ def evaluate_vae(config: Config):
 @pyrallis.wrap()
 def main(config: Config):
     evaluate_vae(config)
-    return
+    #return
     config.name = "env_train_vae"
     config.refresh_name()
     dict_config = asdict(config)

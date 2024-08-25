@@ -10,6 +10,7 @@ from torch import Tensor
 import pyrallis
 from torch import nn
 from dataclasses import dataclass, asdict
+from copy import deepcopy
 
 import numpy as np
 
@@ -72,13 +73,25 @@ def main(config: Config):
                      n_hiddens=config.actor_n_hiddens)
     actor_optim = torch.optim.Adam(actor.parameters(), lr=config.actor_learning_rate,
                                    betas=(0.9, 0.999), eps=1e-8)
-    actor_state = TrainState(actor, actor_optim)
+    actor_target_model = deepcopy(actor)
+
     critic = EnsembleCritic(state_dim=state_dim, action_dim=action_dim, 
                             hidden_dim=config.hidden_dim, num_critics=2,
                             layernorm=config.critic_ln, n_hiddens=config.critic_n_hiddens)
+    critic_target_model = deepcopy(critic)
     critic_optim = torch.optim.Adam(critic.parameters(), lr=config.critic_learning_rate,
                                     betas=(0.9, 0.999), eps=1e-8)
-    critic_state = TrainState(critic, critic_optim)
+    '''
+    if os.path.exists(config.save_chkpt_path):
+        checkpoint = torch.load(config.save_chkpt_path, map_location=device)
+        actor.load_state_dict(checkpoint["actor"])
+        actor_target_model.load_state_dict(checkpoint["actor_target"])
+        critic.load_state_dict(checkpoint["critic"])
+        critic_target_model.load_state_dict(checkpoint["critic_target"])
+        print("Checkpoint loaded from", config.save_chkpt_path)
+    '''
+    actor_state = TrainState(actor, actor_target_model, actor_optim)
+    critic_state = TrainState(critic, critic_target_model, critic_optim)
     actor_state.to(device)
     critic_state.to(device)
 
@@ -107,12 +120,15 @@ def main(config: Config):
         metrics.reset()
         '''
         # save checkpoints
-        if epoch % config.save_chkpt_per == 0 or epoch == config.num_epochs - 1:
+        if (config.save_chkpt_per>0) and (epoch>0) and (epoch % config.save_chkpt_per == 0 or epoch == config.num_epochs - 1):
             torch.save({
                 "actor": actor_state.get_model().state_dict(),
-                "config": dict_config}, f"{config.save_chkpt_path}_{epoch}.pt")
+                "actor_target": actor_state.get_target_model().state_dict(),
+                "critic": critic_state.get_model().state_dict(),
+                "critic_target": critic_state.get_target_model().state_dict(),
+                "config": dict_config}, 
+                config.save_chkpt_path)
         '''
-
         # evaluations
         sim_return_mean = 0.0
         if epoch % config.eval_every == 0 or epoch == config.num_epochs - 1:
@@ -189,7 +205,6 @@ def main(config: Config):
                 config.elbo_threshold,
                 device,
             )        
-
 
 if __name__ == "__main__":
     main()

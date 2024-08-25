@@ -70,7 +70,7 @@ def evaluate(
         returns.append(total_reward)
         steps.append(step+1)
     init_obs = np.array(init_obs)
-    print("gym steps", steps)
+    #print("gym steps", steps)
     return np.array(returns), init_obs, steps
 
 def hopper_is_done(state_):
@@ -109,6 +109,9 @@ def evaluate_simulator(
     step = 0
     need_init = True
     steps = []
+    d_cnt = 0
+    e_cnt = 0
+    cnt = 0
     for i in trange(total_steps, desc="Eval Simulator", leave=False):
         if need_init:
             total_reward = 0.0
@@ -133,12 +136,18 @@ def evaluate_simulator(
         if (step>15) and (done or step >= step_limit or elbo > elbo_cutoff):
             #print("step", step, "total_reward", total_reward, "done", done, "elbo", elbo)
             if step > 20:
+                cnt += 1
+                if done:
+                    d_cnt += 1
+                if elbo > elbo_cutoff:
+                    e_cnt += 1
                 rewards.append(total_reward)
                 steps.append(step)
             need_init = True
             step = 0                
             
-    print("sim steps", steps)
+    #print("sim steps", steps)
+    #print("d_cnt", d_cnt, "e_cnt", e_cnt, "cnt", cnt)
     if len(rewards) == 0:
         rewards = [0.0]
     return np.array(rewards)
@@ -185,7 +194,10 @@ def augment_replay_buffer(
                                elbo.item(), 
                                discounted_reward.item(), 
                                s_states.item(), 
-                               s_rewards.item()])   
+                               s_rewards.item(),
+                               done])
+
+        obs = obs_               
         total_reward += float(reward.cpu())
         step+=1
      
@@ -198,7 +210,7 @@ def augment_replay_buffer(
                 reward_1 = 0.0
                 reward_diffs = []
                 for c in range(len(e_data)-1):
-                    done = c == len(e_data) - 2
+                    done = e_data[c][9]
                     elbo = e_data[c][5]
                     if elbo > elbo_threshold:
                         continue

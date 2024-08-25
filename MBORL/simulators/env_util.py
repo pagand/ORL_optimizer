@@ -472,6 +472,90 @@ def sample_batch_offline(
         return states, actions, next_states, nrewards, seq_idx
 '''
 
+# return initial past state, action
+# past_states: (batch_size, sequence_num, state_dim)
+# past_actions: (batch_size, sequence_num, action_dim)
+# indices: (batch_size) index to start future state action
+def sample_batch_init(
+        dataset: Dict,
+        batch_size: int,
+        sequence_num: int,
+        tragectory_idx: int,
+        left_align: bool,
+        device: torch.device,
+):
+    N = len(dataset["state"])
+    state_dim = len(dataset["state"][0][0])
+    action_dim = len(dataset["action"][0][0])    
+    if left_align:
+        past_states = torch.zeros((batch_size, sequence_num-1, state_dim), dtype=torch.float32)
+        past_actions = torch.zeros((batch_size, sequence_num-1, action_dim), dtype=torch.float32)
+        state0 = torch.stack([Tensor(dataset["state"][i][0]) for i in range(tragectory_idx, tragectory_idx+batch_size)], axis=0).unsqueeze(1)
+        action0 = torch.stack([Tensor(dataset["action"][i][0]) for i in range(tragectory_idx, tragectory_idx+batch_size)], axis=0).unsqueeze(1)
+        past_states = torch.cat((past_states, state0), dim=1).to(device)
+        past_actions = torch.cat((past_actions, action0), dim=1).to(device)
+        indices = torch.ones((batch_size), dtype=torch.int32, device=device)
+    else:
+        len0 = len(dataset["state"][tragectory_idx])
+        past_states = torch.empty((0, sequence_num, state_dim), dtype=torch.float32)
+        past_actions = torch.empty((0, sequence_num, action_dim), dtype=torch.float32)
+        indices = []
+        for b in range(batch_size):
+
+            len1 = len(dataset["state"][tragectory_idx+b])
+            indices.append(len1-len0+1)
+            
+            if len1-len0>=sequence_num-1:
+                zero_pad_len = 0
+            else:
+                zero_pad_len = sequence_num-1-(len1-len0)
+            fill_in_len = sequence_num-zero_pad_len
+            start_fill_idx = len1-len0-(fill_in_len-1)
+            '''
+            zero_pad_len = sequence_num-1
+            fill_in_len = 1
+            start_fill_idx = len1-len0
+            '''
+            #print("zero_pad_len", zero_pad_len, "fill_in_len", fill_in_len, "start_fill_idx", start_fill_idx, "len0", len0, "len1", len1)
+            states = torch.zeros((1,zero_pad_len, state_dim), dtype=torch.float32)
+            actions = torch.zeros((1,zero_pad_len, action_dim), dtype=torch.float32)
+            states = torch.cat((states, torch.tensor(dataset["state"][tragectory_idx+b][start_fill_idx:start_fill_idx+fill_in_len]).unsqueeze(0)), dim=1)
+            actions = torch.cat((actions, torch.tensor(dataset["action"][tragectory_idx+b][start_fill_idx:start_fill_idx+fill_in_len]).unsqueeze(0)), dim=1)
+            #print("states", states.shape, "actions", actions.shape)
+            past_states = torch.cat((past_states, states), dim=0)
+            past_actions = torch.cat((past_actions, actions), dim=0)
+        indices = torch.tensor(indices, dtype=torch.int32, device=device)
+        past_states = past_states.to(device)
+        past_actions = past_actions.to(device)
+    #print("past_states", past_states.shape, "past_actions", past_actions.shape, "indices", indices.shape)
+    return past_states, past_actions, indices
+
+def sample_batch_offline3(
+    dataset: Dict,
+    batch_size: int,
+    future_num: int,
+    tragectory_idx: int,
+    indices: Tensor,
+    device: torch.device,
+) -> Tuple[Tensor, Tensor, Tensor]:
+    '''
+    output:
+    states: (batch_size, future_num, state_dim)
+    actions: (batch_size, future_num, action_dim)
+    rewards: (batch_size, future_num, 1)
+    '''
+    state_dim = len(dataset["state"][0][0])
+    action_dim = len(dataset["action"][0][0])
+    t_len = len(dataset["state"][tragectory_idx])
+    states_ = np.stack([dataset["state"][tragectory_idx+i][indices[i]:indices[i]+future_num] for i in range(batch_size)], axis=0)
+    actions_ = np.stack([dataset["action"][tragectory_idx+i][indices[i]:indices[i]+future_num] for i in range(batch_size)], axis=0)
+    rewards_ = np.stack([dataset["reward"][tragectory_idx+i][indices[i]:indices[i]+future_num] for i in range(batch_size)], axis=0)
+    states = torch.tensor(states_, dtype=torch.float32)
+    actions = torch.tensor(actions_, dtype=torch.float32)
+    rewards = torch.tensor(rewards_, dtype=torch.float32).unsqueeze(-1)
+    #print("states", states.shape, "actions", actions.shape, "rewards", rewards.shape)
+    return states.to(device), actions.to(device), rewards.to(device)
+                
 def sample_batch_offline2(
     dataset: Dict,
     batch_size: int,

@@ -12,7 +12,7 @@ class ReplayBuffer:
         action_dim: int,
         _buffer_size: int,
         data: Dict[str, np.ndarray],
-        device: str = "cpu",
+        device: str,
     ):
         n_transitions = data["state"].shape[0]
 

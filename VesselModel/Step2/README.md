@@ -1,5 +1,8 @@
 
 This folder includes model implementation.
+Approach 1: 
+  for each epoch, train transformer and gru model separately.
+  using data "data/Features/feature3.csv"
 
 Steps:
 1. configuration is saved in config.py. 

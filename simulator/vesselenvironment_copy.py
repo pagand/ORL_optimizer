@@ -96,12 +96,16 @@ class VesselEnvironment(gym.Env):
         self._load_model(models_file_path)
         self._set_eval()
 
+        self.status = "Stopped"
         self.cmp_dial = None
         self.thr_gauge = None
         self.sfc_plot = None
         self.info_panel = None
         self.num_pad = None
-        self.eta_str = '00:00'
+        self.speed_var = 0.5
+        self.heading_var = 0.5
+        self.mode_var = 0
+        self.eta_var = '00:00'
         self.total_sec = 0
 
     def _load_model(self, file_path):
@@ -344,13 +348,13 @@ class VesselEnvironment(gym.Env):
             # change the x,y tick values
             self.ax.set_xticklabels(np.round(np.arange(-0.06, 1.10, 0.14),4).tolist())
             self.ax.set_yticklabels(np.round(np.arange(-0.38, 1.08 , 0.2),4).tolist())
-        #self._update_results()
-        self._update_results_pyqt()
+        self._update_results()
 
     # create  attribute '_next_step' for button widget
     def _next_step(self, flag=False):
         if self.manual:
-            self.actions = np.append(self.actions, np.expand_dims(np.array([self.speed_var.get(), self.heading_var.get(), self.mode_var.get()]), 0), axis=0)
+            #self.actions = np.append(self.actions, np.expand_dims(np.array([self.speed_var.get(), self.heading_var.get(), self.mode_var.get()]), 0), axis=0)
+            self.actions = np.append(self.actions, np.expand_dims(np.array([self.speed_var, self.heading_var, self.mode_var]), 0), axis=0)
 
         else: # from dataset
             self.actions = np.append(self.actions, np.expand_dims(np.array(self.rl_data[self.trip_id]["actions"][self.current_step]), 0), axis=0)
@@ -365,20 +369,21 @@ class VesselEnvironment(gym.Env):
         if not flag:
             self.status = "Done"
         #self._update_results()
-        self._update_results_pyqt()
+        self._update_results_pyqt(flag=True)
 
     def _resume(self):
         if self.run:
             self.run = False
             self.status = "Stopped"
             #self._update_results()
-            self._update_results_pyqt()
+            self._update_results_pyqt(flag=True)
         else:
             self.run = True
             self.status = "Running ..."
         while self.run and self.current_step < self.max_steps and not self.done:
             self.status = "Running ..."
             self._next_step(flag=True)
+            time.sleep(0.5)
             #self.root.update()
             # make delay
             #self.root.after(500)
@@ -388,7 +393,7 @@ class VesselEnvironment(gym.Env):
         if self.done:
             self.status = "Reached goal"
         #self._update_results()
-        self._update_results_pyqt()
+        self._update_results_pyqt(flag=True)
 
     def _update_results(self):
         root = self.root
@@ -675,7 +680,7 @@ class VesselEnvironment(gym.Env):
 
         # Rorate the 'indicator_heading.png' image to the optimal position and replace the old one
         def update(self, heading, heading_opt):
-            turn = -(heading_opt-heading)
+            turn = -(heading_opt-heading) * 360
 
             rotate = QtGui.QPixmap.fromImage(ImageQt(self.heading_opt.rotate(-int(turn))))
             self.dial_ui.heading_opt.setPixmap(rotate)
@@ -745,7 +750,7 @@ class VesselEnvironment(gym.Env):
             self.ax.grid()
 
         # Add each time instant's SFC and optimal SFC into the plot
-        def update(self, sfc, sfc_opt):
+        def update_plot(self, sfc, sfc_opt):
             self.sfc.append(sfc)
             self.sfc_opt.append(sfc_opt)
             self.line_sfc.set_ydata(self.sfc)
@@ -765,13 +770,17 @@ class VesselEnvironment(gym.Env):
             layout.setContentsMargins(0, 0, 0, 0)
             layout.addWidget(self.chart)
 
+        def clear(self):
+            x = 1
+
         def update(self, sfc, sfc_opt):
-            self.chart.update(sfc, sfc_opt)
+            self.chart.update_plot(sfc, sfc_opt)
 
     # Information panel widget
     class panel(QWidget):
-        def __init__(self):
+        def __init__(self, parent):
             super().__init__()
+            self.parent = parent
             self.info = {}
             self.row = 2
             self.col = 3
@@ -835,7 +844,7 @@ class VesselEnvironment(gym.Env):
             self.info = info
             start_index = self.current_page*self.row*self.col
             keys = list(info.keys())
-            values = info.values()
+            values = list(info.values())
 
             for k in range(self.row*self.col):
                 if (start_index+k) < len(info):
@@ -848,88 +857,254 @@ class VesselEnvironment(gym.Env):
         def __init__(self, parent):
             super().__init__()
             self.parent = parent
+            self.actions = {}
+            self.input_labels = ['ETA', 'Speed', 'Heading', 'Mode']
+            self.labels = []
+            self.textboxes = []
+            self.labels_action = []
+            self.current_textbox = 0
+            self.input_enabled = False
+            self.label_type = None
+            self.label_step = None
+            self.label_cum_rwd = None
+            self.label_cur_rwd = None
+            self.label_status = None
+
             self.init_ui()
 
-        # Create the number pad
         def init_ui(self):
-            rows = [
-                ['1', '2', '3'],
-                ['4', '5', '6'],
-                ['7', '8', '9'],
-                ['CLR', '0', 'ENT'],
+            input_layout = QHBoxLayout()
+
+            text_layout = QVBoxLayout()
+
+            title_layout = QHBoxLayout()
+
+            label = QLabel('')
+            label.setFixedWidth(50)
+            title_layout.addWidget(label)
+
+            self.label_type = QLabel('Type: N/A')
+            title_layout.addWidget(self.label_type)
+
+            label = QLabel('Applied Actions')
+            title_layout.addWidget(label)
+
+            label = QLabel('')
+            label.setFixedWidth(50)
+            title_layout.addWidget(label)
+
+            text_layout.addLayout(title_layout)
+
+            for input_label in self.input_labels:
+                row_layout_text = QHBoxLayout()
+                label = QLabel(f'{input_label}:')
+                label.setFixedWidth(50)
+
+                textbox = QLineEdit()
+                textbox.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                textbox.setEnabled(self.input_enabled)
+
+                label_action = QLabel('N/A')
+
+                row_layout_text.addWidget(label)
+                row_layout_text.addWidget(textbox)
+                row_layout_text.addWidget(label_action)
+                text_layout.addLayout(row_layout_text)
+
+                self.labels.append(label)
+                self.textboxes.append(textbox)
+                self.labels_action.append(label_action)
+
+            status_layout = QVBoxLayout()
+
+            # can just set to initial value without initialize at the beginning
+            self.label_step = QLabel('Step: N/A')
+            status_layout.addWidget(self.label_step)
+            self.label_cum_rwd = QLabel('Cumulative Reward: N/A')
+            status_layout.addWidget(self.label_cum_rwd)
+            self.label_cur_rwd = QLabel('Current Reward: N/A')
+            status_layout.addWidget(self.label_cur_rwd)
+            self.label_status = QLabel('Status: N/A')
+            status_layout.addWidget(self.label_status)
+
+            input_layout.addLayout(text_layout)
+            input_layout.addLayout(status_layout)
+
+            buttons = [
+                ['1', '2', '3', '↑'],
+                ['4', '5', '6', '↓'],
+                ['7', '8', '9', 'CLR'],
+                ['', '0', '.', 'ENT'],
                 ['Stop/Resume', 'Next Step', 'Reset'],
-                ['Auto/Manual', 'Scale/Actual', '']
+                ['Auto/Manual', 'Scaled/Actual', '']
             ]
 
-            layout = QVBoxLayout()
+            button_layout = QVBoxLayout()
 
-            for row in rows:
-                rowLayout = QHBoxLayout()
+            for row in buttons:
+                row_layout_button = QHBoxLayout()
 
                 for buttonText in row:
                     button = QPushButton(buttonText)
                     button.clicked.connect(self.buttonClicked)
+                    #button.setFixedSize(50, 50)
                     button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-                    rowLayout.addWidget(button)
+                    row_layout_button.addWidget(button)
 
-                layout.addLayout(rowLayout)
+                button_layout.addLayout(row_layout_button)
+
+            layout = QVBoxLayout()
+            layout.addLayout(input_layout)
+            layout.addLayout(button_layout)
 
             self.setLayout(layout)
+
+            # automate this
+            self.textboxes[0].setText('00:00')
+            self.textboxes[1].setText('0.5')
+            self.textboxes[2].setText('0.5')
+            self.textboxes[3].setText('0')
+
+            if self.textboxes:
+                self.textboxes[0].setFocus()
 
         def buttonClicked(self):
             sender = self.sender()
             numClicked = sender.text()
 
-            if len(numClicked) == 1:
-                h = self.parent.eta_str[0:2]
-                m = self.parent.eta_str[3:5]
-                self.parent.eta_str = h[1] + m[0] + ':' + m[1] + numClicked + '*'
+            if numClicked.isdigit() or numClicked == '.':
+                current_text = self.textboxes[self.current_textbox].text()
+
+                if ':' in current_text:
+                    hr_str = current_text[0:2]
+                    min_str = current_text[3:5]
+                    current_text = hr_str[1] + min_str[0] + ':' + min_str[1] + numClicked
+                else:
+                    current_text += numClicked
+
+                self.textboxes[self.current_textbox].setText(current_text)
+                self.labels[self.current_textbox].setText(f'{self.input_labels[self.current_textbox]}*:')
+            elif numClicked == '↑':
+                self.navigate_textbox(-1)
+            elif numClicked == '↓':
+                self.navigate_textbox(1)
             elif numClicked == 'CLR':
-                self.parent.eta_str = '00:00*'
+                current_text = self.textboxes[self.current_textbox].text()
+
+                if ':' in current_text:
+                    current_text = '00:00'
+                else:
+                    current_text = ''
+
+                self.textboxes[self.current_textbox].setText(current_text)
+                self.labels[self.current_textbox].setText(f'{self.input_labels[self.current_textbox]}*:')
             elif numClicked == 'ENT':
-                self.parent.eta_str = self.parent.eta_str[0:5]
-                hours, minutes = map(int, self.parent.eta_str[0:5].split(':'))
-                self.parent.total_sec = (hours*60+minutes)*60
+                values = self.get_textbox_values()
+
+                for i in range(len(values)):
+                    if values[i]:
+                        if ':' in values[i]:
+                            eta = values[i]
+                            hr, min = map(int, eta[0:5].split(':'))
+                            sec = (hr*60+min)*60
+                            values[i] = sec
+                        else:
+                            values[i] = float(values[i])
+                    else:
+                        values[i] = 0
+
+                # update this automatically by using a list
+                self.parent.eta_var = eta
+                self.parent.total_sec = values[0]
+                self.parent.speed_var = values[1]
+                self.parent.heading_var = values[2]
+                self.parent.mode_var = values[3]
+
+                for index, label in enumerate(self.labels):
+                    label.setText(f'{self.input_labels[index]}:')
             elif numClicked == 'Stop/Resume':
                 self.parent._resume()
             elif numClicked == 'Next Step':
                 self.parent._next_step()
             elif numClicked == 'Reset':
-                self.parent._reset()
+                self.parent._reset_pyqt()
             elif numClicked == 'Auto/Manual':
-                # disable/enable textbox input field. update after adding textbox in pad
-                #if (mode_entry['state'] == tk.NORMAL):
-                #    speed_entry['state'] = tk.DISABLED
-                #    heading_entry['state'] = tk.DISABLED
-                #    mode_entry['state'] = tk.DISABLED
-                #    self.parent.manual = False
-                #else:
-                #    speed_entry['state'] = tk.NORMAL
-                #    heading_entry['state'] = tk.NORMAL
-                #    mode_entry['state'] = tk.NORMAL
-                #    self.parent.manual = True
+                self.toggle_inputs()
+
+                # when manual -> auto, assign back the values to textboxes
             elif numClicked == 'Scaled/Actual':
                 if (self.parent.scale_var == True):
                     self.parent.scale_var = False
-                    self.parent._update_results_pyqt()
+                    self.parent._update_results_pyqt(flag=False)
                 else:
                     self.parent.scale_var = True
-                    self.parent._update_results_pyqt()
+                    self.parent._update_results_pyqt(flag=False)
 
-    def _update_results_pyqt(self):
-        shows = self.obs[-1].copy()
-        if self.scale_var:
-            # transformed values in  the original space
-            # transform_cols = [ 'current', 'rain', 'snowfall', "pressure", 'wind_force', "resist_ratio",
-            #            'FC', "LATITUDE", 'LONGITUDE', 'SOG', "DEPTH", "SPEED"]
-            array1 = np.array([shows[4],shows[5],shows[6],0, shows[7], shows[9],shows[16], shows[18], shows[19], shows[17],0,self.actions[-1, 0]  ])
-            array1 = array1[np.newaxis, :]
-            array1 = self.scaler.inverse_transform(array1)
-            array1 = array1[0,:]
-            shows[4:7] = array1[0:3]
-            shows[7] = array1[4]
-            shows[9] = array1[5]
-            shows[16:20] = [array1[6],array1[9],array1[7],array1[8]]
+        def toggle_inputs(self):
+            self.input_enabled = not self.input_enabled
+            self.parent.manual = not self.parent.manual
+
+            for textbox in self.textboxes:
+                textbox.setEnabled(self.input_enabled)
+
+        def navigate_textbox(self, direction):
+            if self.textboxes:
+                self.current_textbox = (self.current_textbox + direction) % len(self.textboxes)
+                self.textboxes[self.current_textbox].setFocus()
+
+        def get_textbox_values(self):
+            textbox_values = []
+            for textbox in self.textboxes:
+                textbox_values.append(textbox.text())
+            return textbox_values
+
+        def update(self, actions):
+            # may not need self.action. just action
+            self.actions = actions
+
+            # automate this
+            self.labels_action[0].setText(actions['ETA'])
+            self.labels_action[1].setText(actions['Speed'])
+            self.labels_action[2].setText(actions['Heading'])
+            self.labels_action[3].setText(actions['Mode'])
+
+            self.label_type.setText(f"Type: {actions['Type']}")
+            self.label_step.setText(f"Step: {actions['Step']}")
+            self.label_cum_rwd.setText(f"Cumulative Reward: {actions['Cumulative Reward']}")
+            self.label_cur_rwd.setText(f"Current Reward: {actions['Current Reward']}")
+            self.label_status.setText(f"Status: {actions['Status']}")
+
+    def _reset_pyqt(self):
+        self.reset()
+        self.status = "Reset"
+        self.done = False
+
+        if self.sfc_plot:
+            self.sfc_plot.clear()
+        self._update_results_pyqt(flag=False)
+
+    def _scaler(self, shows, speed):
+        shows_scaled = shows
+        # transformed values in  the original space
+        # transform_cols = [ 'current', 'rain', 'snowfall', "pressure", 'wind_force', "resist_ratio",
+        #            'FC', "LATITUDE", 'LONGITUDE', 'SOG', "DEPTH", "SPEED"]
+        array1 = np.array([shows[4], shows[5], shows[6], 0, shows[7], shows[9], shows[16], shows[18], shows[19], shows[17], 0, speed])
+        array1 = array1[np.newaxis, :]
+        array1 = self.scaler.inverse_transform(array1)
+        array1 = array1[0, :]
+        shows_scaled[4:7] = array1[0:3]
+        shows_scaled[7] = array1[4]
+        shows_scaled[9] = array1[5]
+        shows_scaled[16:20] = [array1[6], array1[9], array1[7], array1[8]]
+        speed_scaled = array1[-1]
+
+        return shows_scaled, speed_scaled
+
+    def _update_results_pyqt(self, flag=False):
+        shows_current = self.obs[-2].copy()
+        shows_predict = self.obs[-1].copy()
+        shows_current_scaled, speed_current_scaled = self._scaler(shows_current, self.actions[-2, 0])
+        shows_predict_scaled, speed_predict_scaled = self._scaler(shows_predict, self.actions[-1, 0])
         # show the observation in the GUI in colomn 1
         #  [0"Time2", 1"turn", 2"acceleration", 3"distance",
         #    4'current', 5'rain', 6'snowfall',7 'wind_force',8 'wind_direc', 9"resist_ratio",
@@ -937,41 +1112,45 @@ class VesselEnvironment(gym.Env):
         #    12"is_weekday",13 'direction', 14"season",15"hour",
         #    16"FC", 17"SOG", 18"LATITUDE", 19'LONGITUDE',
         info = {
-              "FC": str(round(shows[16], 3)),
-              "SOG": str(round(shows[17], 3)),
-              "Latitude": str(round(shows[18], 3)),
-              "Longitude": str(round(shows[19], 3)),
-              "Turn": str(round(shows[1], 3)),
-              "Acceleration": str(round(shows[2], 3)),
-              "Distance": str(round(shows[3], 3)),
-              "Current": str(round(shows[4], 3)),
-              "Wind Force": str(round(shows[7], 3)),
-              "Wind Direction": str(round(shows[8], 3)),
-              "Resist Ratio": str(round(shows[9], 3)),
-              "Is Weekday": str(round(shows[12], 3)),
-              "Season": str(round(shows[14], 3)),
-              "Hour": str(round(shows[15], 3)),
-              "Direction": str(round(shows[13], 3)),
-              "Step": str(self.current_step),
-              "Cumulative Reward": str(round(self.reward, 3)),
-              "Current Reward": str(round(self.reward_cum, 3)),
-              "Type": "Manual" if self.manual else "Auto",
-              "Speed": str(round(self.actions[-1, 0], 3)) if not self.scale_var else str(round(array1[-1], 3)),
-              "Heading": str(round(self.actions[-1, 1], 3)),
-              "Mode": str(round(self.actions[-1, 2], 3)),
-              "Status": self.status
-         }
+            "FC": str(round(shows_current[16], 3)),
+            "SOG": str(round(shows_current[17], 3)),
+            "Latitude": str(round(shows_current[18], 3)),
+            "Longitude": str(round(shows_current[19], 3)),
+            "Turn": str(round(shows_current[1], 3)),
+            "Acceleration": str(round(shows_current[2], 3)),
+            "Distance": str(round(shows_current[3], 3)),
+            "Current": str(round(shows_current[4], 3)),
+            "Wind Force": str(round(shows_current[7], 3)),
+            "Wind Direction": str(round(shows_current[8], 3)),
+            "Resist Ratio": str(round(shows_current[9], 3)),
+            "Is Weekday": str(round(shows_current[12], 3)),
+            "Season": str(round(shows_current[14], 3)),
+            "Hour": str(round(shows_current[15], 3)),
+            "Direction": str(round(shows_current[13], 3)),
+        }
+
+        actions = {
+            "ETA": self.eta_var,
+            "Speed": str(round(self.actions[-1, 0], 3)) if not self.scale_var else str(round(speed_predict_scaled, 3)),
+            "Heading": str(round(self.actions[-1, 1], 3)),
+            "Mode": str(round(self.actions[-1, 2], 3)),
+            "Type": "Manual" if self.manual else "Auto",
+            "Step": str(self.current_step),
+            "Cumulative Reward": str(round(self.reward, 3)),
+            "Current Reward": str(round(self.reward_cum, 3)),
+            "Status": self.status
+        }
 
         if self.cmp_dial:
-            #self.cmp_dial.update(info["Heading"], ??)
+            self.cmp_dial.update(round(self.actions[-2, 1], 3), round(self.actions[-1, 1], 3))
         if self.thr_gauge:
-            #self.thr_gauge.update(info["Speed"], ??)
-        if self.sfc_plot:
-            #self.sfc_plot.add_data(info["FC"], ??)
+            self.thr_gauge.update(round(speed_current_scaled, 3), round(speed_predict_scaled, 3))
+        if self.sfc_plot and flag:
+            self.sfc_plot.update(round(shows_current[16], 3), round(shows_predict[16], 3))
         if self.info_panel:
-            #self.info_panel.update(info)
+            self.info_panel.update(info)
         if self.num_pad:
-            #self.num_pad.update()
+            self.num_pad.update(actions)
 
     class render_pyqt(QWidget):
         def __init__(self, parent):
@@ -980,11 +1159,11 @@ class VesselEnvironment(gym.Env):
             self.init_ui()
 
         def init_ui(self):
-            self.parent.cmp_dial = self.parent.dial()
-            self.parent.thr_gauge = self.parent.gauge()
-            self.parent.sfc_plot = self.parent.plot()
-            self.parent.info_panel = self.parent.panel()
-            self.parent.num_pad = self.parent.pad()
+            self.parent.cmp_dial = self.parent.dial(self.parent)
+            self.parent.thr_gauge = self.parent.gauge(self.parent)
+            self.parent.sfc_plot = self.parent.plot(self.parent)
+            self.parent.info_panel = self.parent.panel(self.parent)
+            self.parent.num_pad = self.parent.pad(self.parent)
 
             # adjust margin, setContentsMargins
             layout = QGridLayout()
@@ -1030,8 +1209,10 @@ def main():
     #env.render()
 
     app = QApplication(sys.argv)
-    window = env.render_pyqt()
+    window = env.render_pyqt(env)
     window.show()
+
+    app.exec_()
 
     fc_predicted = []
     sog_predicted = []
@@ -1042,7 +1223,6 @@ def main():
         # reset environment
         env.reset()
         trip_ids.append(env.trip_id)
-
 
         length = rl_data[env.trip_id]["observations"].shape[0]
         fc = np.zeros((length))
@@ -1093,7 +1273,6 @@ def main():
         ax3 = plt.subplot(grid[1, :1])
         ax4 = plt.subplot(grid[1, 1:])
 
-
         ax1.plot(range(25, len(fc_predicted[i])), fc_predicted[i][25:], label='predictions'.format(i=2))
         ax1.plot(range(25, len(fc_predicted[i])), fcs[i][25:], label='actuals'.format(i=1))
         ax1.legend(loc='best')
@@ -1110,8 +1289,6 @@ def main():
     plot(0)
     plot(1)
     print("done")
-
-    sys.exit(app.exec_())
 
 if __name__ == "__main__":
     main()

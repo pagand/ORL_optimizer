@@ -326,4 +326,4 @@ plt.show()
 
 # df.to_csv('~/BCFerryData/queenCsvOut_cleaned_location.csv', index=False)
 
-df.to_csv('data/Features/queenCsvOut_cleaned_location.csv', index=False)
+df.to_csv('data/Features/queenCsvOut_step1.csv', index=False)

@@ -31,3 +31,5 @@ data/Plot/
 *wandb*
 *__pycache__*
 *__tmp__*
+*queenCsvOut*
+*conversion.py

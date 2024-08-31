@@ -5,8 +5,9 @@ class VesselConfig:
     
     
     iter = 5
+    version = "v1"
+    ckpt = "best" # "best" or "last"
     n_epochs = 100
-    best_epoch = -1
     loss_weight = [3,3,1,1] # weight for each output
     # loss_weight_m = [1,1] # weight for tf_loss and gru_loss
     

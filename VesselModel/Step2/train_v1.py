@@ -50,7 +50,7 @@ gru_model = GRU_update(4, hidden_size=375, output_size=4, num_layers=1, predicti
 
 tf_model = tf_model.float()
 
-def train(trainloader, validloader, model_name = "model_v1"):
+def train(trainloader, validloader, model_name):
     best_loss = 10000
     best_epoch = -1
 
@@ -135,6 +135,11 @@ def train(trainloader, validloader, model_name = "model_v1"):
         if (valid_gru_loss < best_loss):
             best_loss = valid_gru_loss
             best_epoch = epoch
+            print("best epoch: ", best_epoch, "best loss: ", best_loss)
+            path = "data/Checkpoints/{}/best_tf.pt".format(model_name)
+            torch.save(tf_model.state_dict(), path)
+            path = "data/Checkpoints/{}/best_gru.pt".format(model_name)
+            torch.save(gru_model.state_dict(), path)
         
 
         dict = {"epoch": epoch, 
@@ -156,15 +161,16 @@ def train(trainloader, validloader, model_name = "model_v1"):
             wandb.log(dict)
         
 
-        print("best epoch: ", best_epoch, "best loss: ", best_loss)
+        
         # path = "data/Checkpoints/{}/{}_epoch_{}_tf.pt".format(model_name, model_name, epoch)
         # torch.save(tf_model.state_dict(), path)
         # path = "data/Checkpoints/{}/{}_epoch_{}_gru.pt".format(model_name, model_name, epoch)
         # torch.save(gru_model.state_dict(), path)
     
-    path = "data/Checkpoints/{}/{}_epoch_{}_tf.pt".format(model_name, model_name, best_epoch)
+    # save last model
+    path = "data/Checkpoints/{}/last_tf.pt".format(model_name)
     torch.save(tf_model.state_dict(), path)
-    path = "data/Checkpoints/{}/{}_epoch_{}_gru.pt".format(model_name, model_name, best_epoch)
+    path = "data/Checkpoints/{}/last_gru.pt".format(model_name)
     torch.save(gru_model.state_dict(), path)
     return best_epoch
 
@@ -281,9 +287,9 @@ criterion = nn.MSELoss()
 # criterion = WeightedMSELoss(config.loss_weight)
 
 
-iter = config.iter
+
 n_epochs = config.n_epochs
-model_name = "Model_v1_Iter_{}".format(iter)
+model_name = "Model_{}_Iter_{}".format(config.version, config.iter)
 # best_epoch = 95
 
 if not os.path.exists("data/Checkpoints/{}".format(model_name)):
@@ -307,8 +313,8 @@ config.best_epoch = best_epoch
 
 
 #test
-tf_model.load_state_dict(torch.load("data/Checkpoints/{}/{}_epoch_{}_tf.pt".format(model_name, model_name, best_epoch)))
-gru_model.load_state_dict(torch.load("data/Checkpoints/{}/{}_epoch_{}_gru.pt".format(model_name, model_name, best_epoch)))
+tf_model.load_state_dict(torch.load("data/Checkpoints/{}/best_tf.pt".format(model_name)))
+gru_model.load_state_dict(torch.load("data/Checkpoints/{}/best_gru.pt".format(model_name)))
 
 print("----- Test Result ------ ")
 print("best epoch: ", best_epoch)

@@ -2,10 +2,10 @@ import pandas as pd
 import numpy as np
 import datetime
 import matplotlib.pyplot as plt
-from pykalman import KalmanFilter
+# from pykalman import KalmanFilter
 
 
-df = pd.read_csv("data/Features/queenCsvOut_cleaned_location.csv")
+df = pd.read_csv("data/Features/queenCsvOut_step1.csv")
 
 df.drop(["CARGO", "CARGO_PAX", "PAX", 'TRACK_MADE_GOOD', 
         'ENGINE_1_FLOWRATE', 'ENGINE_1_FLOWRATEA', 'ENGINE_1_FLOWRATEB', 'ENGINE_1_FLOWTEMPB',
@@ -200,11 +200,15 @@ for index in outlier_indexes:
 
 
 
+## ***************** outliered removed data ********************* ##
+
+
+
 #df = df.to_csv("../../df_outlier_removed.csv", index=False)
 # df = df.to_csv("~/BCFerryData/df_outlier_removed.csv", index=False)
 # df = pd.read_csv("~/BCFerryData/df_outlier_removed.csv")
-df.to_csv("data/Features/df_outlier_removed.csv", index=False)
-df = pd.read_csv("data/Features/df_outlier_removed.csv")
+# df.to_csv("data/Features/df_outlier_removed.csv", index=False)
+# df = pd.read_csv("data/Features/df_outlier_removed.csv")
 
 
 # df[(df.SOG == 0) & (df.LONGITUDE.isna()) & (df.LATITUDE.isna())][['Dati','Time','LONGITUDE','LATITUDE','SOG','trip_id']]
@@ -215,24 +219,24 @@ df = pd.read_csv("data/Features/df_outlier_removed.csv")
 #### IMPUTING MISSING DATA #####
 
 # kalman filter to impute missing values
-def impute_missing_values(data, transition_matrices, observation_matrices, transition_covariance,
-                          observation_covariance, initial_state_mean, initial_state_covariance):
-    kf = KalmanFilter(transition_matrices=transition_matrices,
-                      observation_matrices=observation_matrices,
-                      transition_covariance=transition_covariance,
-                      observation_covariance=observation_covariance,
-                      initial_state_mean=initial_state_mean,
-                      initial_state_covariance=initial_state_covariance)
+# def impute_missing_values(data, transition_matrices, observation_matrices, transition_covariance,
+#                           observation_covariance, initial_state_mean, initial_state_covariance):
+#     kf = KalmanFilter(transition_matrices=transition_matrices,
+#                       observation_matrices=observation_matrices,
+#                       transition_covariance=transition_covariance,
+#                       observation_covariance=observation_covariance,
+#                       initial_state_mean=initial_state_mean,
+#                       initial_state_covariance=initial_state_covariance)
     
-    # Create a mask indicating missing values
-    mask = np.isnan(data)
-    filtered_state_means, _ = kf.filter(data)
+#     # Create a mask indicating missing values
+#     mask = np.isnan(data)
+#     filtered_state_means, _ = kf.filter(data)
     
-    # Replace missing values with imputed values
-    imputed_data = data.copy()
-    imputed_data[mask] = filtered_state_means[mask]
+#     # Replace missing values with imputed values
+#     imputed_data = data.copy()
+#     imputed_data[mask] = filtered_state_means[mask]
     
-    return imputed_data
+#     return imputed_data
 
 # Add an empty line for each missing time within trips
 
@@ -391,7 +395,7 @@ df.isna().sum()[df.isna().sum()>0]
 
 
 # df.to_csv('~/BCFerryData/df_naive_impute.csv', index=False)
-df.to_csv('data/Features/df_naive_impute.csv', index=False)
+df.to_csv('data/Features/queenCsvOut_step2.csv', index=False)
 
 
 #pd.set_option('display.max_columns', 100)

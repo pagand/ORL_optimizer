@@ -13,13 +13,13 @@ from torch.utils.data import Dataset, DataLoader
 import random
 from sklearn.metrics import r2_score, mean_squared_error
 from torch.optim.lr_scheduler import StepLR
-from transformers import TimeSeriesTransformerConfig, TimeSeriesTransformerModel, TimeSeriesTransformerForPrediction
-from transformers import AutoformerConfig, AutoformerModel, AutoformerForPrediction
-import convention
+# from transformers import TimeSeriesTransformerConfig, TimeSeriesTransformerModel, TimeSeriesTransformerForPrediction
+# from transformers import AutoformerConfig, AutoformerModel, AutoformerForPrediction
+import conversion
 
 
 # path = "data/Features/feature3.csv"
-path = "data/Features/feature1.csv"
+path = "data/Features/queenCsvOut_step5.csv"
 df = pd.read_csv(path)
 df.columns #length 53"
 len(df.columns)
@@ -66,15 +66,17 @@ df["distance"] = ((df["goal_long"]-df["LONGITUDE"])**2 + \
                              (df["goal_lat"]-df["LATITUDE"])**2 )**0.5
 
 
-df = convention.transform_value(df)
+df = conversion.transform_value(df)
 
-df = convention.one_hot(df, ["season", "weathercode", "wind_direc"], normalize = True)
+df = conversion.one_hot(df, ["season", "weathercode", "wind_direc"], normalize = True)
 df = df[df["adversarial"]==0]
 
 
-df.to_csv("data/Features/feature2.csv", index=False)
+# df.to_csv("data/Features/feature2.csv", index=False)
 
-df = pd.read_csv("data/Features/feature2.csv")
+# df = pd.read_csv("data/Features/feature2.csv")
+
+### ****************** feature 2 ****************** ###
 
 
 cols = ["Time2", "trip_id", "adversarial", "SPEED", "HEADING", "MODE", "turn", "acceleration",
@@ -91,5 +93,5 @@ df = df[cols]
 df.iloc[0, df.columns.get_loc('turn')] = df.iloc[1, df.columns.get_loc('turn')]
 df.iloc[0, df.columns.get_loc('acceleration')] = 0
 
-df.to_csv("data/Features/feature3.csv", index=False)
+df.to_csv("data/Features/feature.csv", index=False)
 

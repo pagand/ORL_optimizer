@@ -86,7 +86,7 @@ class testTrip():
         fc, sog, longitude, latitude = self._predict(self.past_values, self.past_feature, self.future_feature, self.static_values, self.tf, self.gru)
         # update past values for next step
         self.past_values = self.past_values[1:self.current_step]
-        self.past_values.append(pd.Series(), ignore_index=True)
+        # self.past_values= pd.concat([self.past_values, pd.Series()], ignore_index=True)
         self.past_values.loc[self.current_step] = fc, sog, longitude, latitude
 
         # dict = {"countDown": self.data.iloc[self.current_step]["countDown"], 
@@ -97,9 +97,10 @@ class testTrip():
                 "act_FC": self.data.iloc[self.current_step]["FC"], "act_SOG": self.data.iloc[self.current_step]["SOG"],
                 "act_LONGITUDE": self.data.iloc[self.current_step]["LONGITUDE"], "act_LATITUDE": self.data.iloc[self.current_step]["LATITUDE"]
         }
-        wandb.log(dict)
+        if config.log_wandb:
+            wandb.log(dict)
         
-        return fc, sog, longitude, latitude
+        return fc, sog, longitude, latitude, dict
 
     def _predict(self, past_values, past_feature, future_feature, static_feature, 
                  #model,
@@ -123,8 +124,12 @@ class testTrip():
         self.pred_sog = []
         self.pred_longitude = []
         self.pred_latitude = []
+        actual_values = []
         while self.current_step < self.max_steps:
-            fc, sog, longitude, latitude = self._step()
+            fc, sog, longitude, latitude, plot_dict = self._step()
+            # save the plot_dict
+            actual_values.append([plot_dict["act_FC"], plot_dict["act_SOG"], plot_dict["act_LONGITUDE"], plot_dict["act_LATITUDE"]])
+
             self.current_step += 1
             self.pred_fc.append(fc)
             self.pred_sog.append(sog)
@@ -134,6 +139,28 @@ class testTrip():
             #     print("Trip done")
             #     break
         print("Trip finished")
+        if not config.log_wandb:
+            # plot the actual and predicted values
+            actual_values = np.array(actual_values)
+            ax , fig = plt.subplots(2,2)
+            plt.subplot(2,2,1)
+            plt.plot(actual_values[:,0], label="actual_fc")
+            plt.plot(self.pred_fc, label="pred_fc")
+            plt.legend()
+            plt.subplot(2,2,2)
+            plt.plot(actual_values[:,1], label="actual_sog")
+            plt.plot(self.pred_sog, label="pred_sog")
+            plt.legend()
+            plt.subplot(2,2,3)
+            plt.plot(actual_values[:,2], label="actual_longitude")
+            plt.plot(self.pred_longitude, label="pred_longitude")
+            plt.legend()
+            plt.subplot(2,2,4)
+            plt.plot(actual_values[:,3], label="actual_latitude")
+            plt.plot(self.pred_latitude, label="pred_latitude")
+            plt.legend()
+            plt.show()
+
         return self.pred_fc, self.pred_sog, self.pred_longitude, self.pred_latitude
     
     def max_step(self):
@@ -146,20 +173,17 @@ df = pd.read_csv(path)
 
 
 starting_step = 25
-load_iter = config.iter
-load_cp = config.best_epoch
 # model_name = "vesselModel_Iter_{}".format(load_iter)
-model_name = "Model_v1_Iter_{}".format(load_iter)
-
-filepath = ("data/Checkpoints/{}/{}_epoch_{}_tf.pt".format(model_name, model_name, load_cp),
-            "data/Checkpoints/{}/{}_epoch_{}_gru.pt".format(model_name, model_name, load_cp)
+filepath = ("data/Checkpoints/Model_{}_Iter_{}/{}_tf.pt".format(config.version,config.iter, config.ckpt),
+            "data/Checkpoints/Model_{}_Iter_{}/{}_gru.pt".format(config.version,config.iter, config.ckpt )
             )
 
 random.seed(None)
 
-
-wandb.login()
-wandb.init(project="Trip Visualization", name="{}_iter{}_epoch{}".format(model_name, load_iter, load_cp))
+if config.log_wandb:
+    wandb.login()
+    model_name = "Model_{}_Iter_{}_{}".format(config.version,config.iter, config.ckpt)
+    wandb.init(project="Trip Visualization", name=model_name)
 
 # testing = True
 

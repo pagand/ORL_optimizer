@@ -7,9 +7,11 @@ import matplotlib.pyplot as plt
 import os
 
 # file_path = "~/BCFerryData/df_naive_impute.csv"
-file_path = "data/Features/feature_tmp1.csv"
+file_path = "data/Features/queenCsvOut_step3.csv"
 # df = pd.read_csv(file_path, skiprows=[1])
 df = pd.read_csv(file_path)
+
+weather = pd.read_csv(os.getcwd() + "/data/Features/weather.csv")
 
 
 # # from the Dati variable, get the corresponding season code, hour, and day of the week
@@ -204,7 +206,7 @@ df["current"] = df["STW"] - df["SOG"]
 # weathercode: uses WMO weather codes
 
 
-weather = pd.read_csv(os.getcwd() + "/data/Features/weather.csv")
+
 weather.columns = ["time", "pressure", "rain", "snowfall", "weathercode"]
 weather["time"] = pd.to_datetime(weather["time"], format='%Y-%m-%dT%H:%M')
 weather["day"] = weather.time.apply(lambda x: x.date())
@@ -256,7 +258,7 @@ df = df.drop(["date"], axis=1)
 # plt.show()
 
 # df.to_csv("~/BCFerryData/feature1_tmp2.csv", index=False)
-df.to_csv("data/Features/feature1_tmp2_2.csv", index=False)
+df.to_csv("data/Features/queenCsvOut_step4.csv", index=False)
 
 # len(df[pd.isna(df)].trip_id) # return 324164
 # df

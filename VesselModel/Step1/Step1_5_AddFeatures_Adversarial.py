@@ -1,14 +1,11 @@
 from matplotlib.patches import Polygon
 import pandas as pd
 import numpy as np
-import datetime
-import pickle
 import matplotlib.pyplot as plt
-from scipy.stats import gaussian_kde
 
 
 # df = pd.read_csv("~/BCFerryData/feature1.csv")
-df = pd.read_csv("data/Features/feature1_tmp2_2.csv")
+df = pd.read_csv("data/Features/queenCsvOut_step4.csv")
 
 
 plt.scatter(df.LONGITUDE, df.LATITUDE, c = df.MODE, s=1)
@@ -140,7 +137,7 @@ plt.scatter(df[~df.trip_id.isin(samples)].LONGITUDE, df[~df.trip_id.isin(samples
 
 
 # df.to_csv("~/BCFerryData/feature1.csv", index=False)
-df.to_csv("data/Features/feature1.csv", index=False)
+df.to_csv("data/Features/queenCsvOut_step5.csv", index=False)
 # df.to_csv("data/Features/feature1.csv", index=False)
 
 

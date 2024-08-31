@@ -1,11 +1,9 @@
 import pandas as pd
 import numpy as np
-import datetime
-import pickle
 import matplotlib.pyplot as plt
 
 # file_path = "~/BCFerryData/df_naive_impute.csv"
-file_path = "data/Features/df_naive_impute.csv"
+file_path = "data/Features/queenCsvOut_step2.csv"
 # df = pd.read_csv(file_path, skiprows=[1])
 df = pd.read_csv(file_path)
 
@@ -118,6 +116,6 @@ df["resist_ratio1"] = df["THRUST_1"]/(df["TORQUE_1"]*df["SPEED_1"]+1e-6)
 df["resist_ratio2"] = df["THRUST_2"]/(df["TORQUE_2"]*df["SPEED_2"]+1e-6)
 
 
-df.to_csv('data/Features/feature_tmp1.csv', index=False)
+df.to_csv('data/Features/queenCsvOut_step3.csv', index=False)
 #df = pd.read_csv('data/feature_tmp1.csv')
 

@@ -81,6 +81,7 @@ class Config:
     augment_per: int 
     sensitivity_threshold: float 
     reward_penalize: bool 
+    use_sim_env: bool
 
     def refresh_name(self):
         self.name = f"{self.name}-{self.dataset_name}-{str(uuid.uuid4())[:4]}"

@@ -118,7 +118,7 @@ def main(config: Config):
         logs = {k: v for k, v in mean_metrics.items()}
         wandb.log(logs)
         metrics.reset()
-        '''
+
         # save checkpoints
         if (config.save_chkpt_per>0) and (epoch>0) and (epoch % config.save_chkpt_per == 0 or epoch == config.num_epochs - 1):
             torch.save({
@@ -127,11 +127,11 @@ def main(config: Config):
                 "critic": critic_state.get_model().state_dict(),
                 "critic_target": critic_state.get_target_model().state_dict(),
                 "config": dict_config}, 
-                config.save_chkpt_path)
-        '''
+                f"{config.save_chkpt_path}_{epoch}.pt")
+
         # evaluations
         sim_return_mean = 0.0
-        if epoch % config.eval_every == 0 or epoch == config.num_epochs - 1:
+        if config.eval_every>0 and (epoch % config.eval_every == 0 or epoch == config.num_epochs - 1):
             if config.use_gym_env:
                 eval_returns, init_obs, steps = evaluate(
                     eval_env,
@@ -143,24 +143,24 @@ def main(config: Config):
                 )
                 normalized_score = eval_env.get_normalized_score(eval_returns) * 100.0
 
-            sim_returns = evaluate_simulator(
-                myenv,
-                actor_state.get_model(),
-                config.eval_episodes,
-                init_obs,
-                config.eval_step_limit,
-                config.eval_total_steps,
-                config.elbo_cutoff,
-                device,
-            )
-            #sim_normalized_score = eval_env.get_normalized_score(sim_returns) * 100.0
-            #sim_returns *= 100.0
-            if np.mean(sim_returns) > 0:
-                sim_return_mean = np.mean(sim_returns)
+            if config.use_sim_env:
+                sim_returns = evaluate_simulator(
+                    myenv,
+                    actor_state.get_model(),
+                    config.eval_episodes,
+                    init_obs,
+                    config.eval_step_limit,
+                    config.eval_total_steps,
+                    config.elbo_cutoff,
+                    device,
+                )
+                #sim_normalized_score = eval_env.get_normalized_score(sim_returns) * 100.0
+                #sim_returns *= 100.0
+                if np.mean(sim_returns) > 0:
+                    sim_return_mean = np.mean(sim_returns)
 
             if config.use_gym_env:
-  
-                #rsqr = 0.0
+                  #rsqr = 0.0
                 #if len(sim_rewards) > 1:
                 #    rsqr = r2_score(sim_rewards, gym_rewards)            
                 wandb.log(

@@ -7,14 +7,14 @@ chkpt_path_ar: MBORL/config/hopper/hopper_medium_v2_ar.pt
 vae_chkpt_path: MBORL/config/hopper/hopper_medium_v2_vae.pt
 load_chkpt: true
 save_chkpt_per: 5
-sequence_num: 10
+sequence_num: 20
 hidden_dim: 128
 future_num: 3
 num_epochs: 200
 min_updates_per_epoch: 1000
 eval_episodes: 100
 batch_size: 128
-dynamics_lr: 3e-7
+dynamics_lr: 5e-7
 dynamics_weight_decay: 1e-11
 eval_seed: 42
 train_seed:  0

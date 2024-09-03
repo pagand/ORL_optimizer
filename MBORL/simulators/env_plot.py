@@ -74,7 +74,7 @@ def main(config: Config):
     state_dim, action_dim = get_env_info(env)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     #device = torch.device('cpu')
-    tragectory_idx = N-2 # whic tragectory to plot
+    tragectory_idx = N-100 # whic tragectory to plot
     tlen = len(data_test['state'][tragectory_idx])
     #print("reward", data_test['reward'][tragectory_idx])
     states_true = np.array(data_test['state'][tragectory_idx][config.sequence_num:tlen-config.future_num+1])
@@ -105,7 +105,7 @@ def main(config: Config):
                 tragectory_idx=tragectory_idx, step_idx=u, device=device)
         rewards = rewards.to(device)
         states = states[:, :config.sequence_num].to(device)
-        actions = actions[:, :config.sequence_num].to(device)
+        actions = actions[:, -1].to(device)
         with torch.inference_mode():
             seqModel.eval()
             next_states_pred_nar, rewards_pred_nar, hc, *_ = seqModel(states, actions, hc)
@@ -134,7 +134,7 @@ def main(config: Config):
                     data_test, 1, config.sequence_num, config.future_num, 
                     tragectory_idx=tid, step_idx=s, device=device)
             states = states[:, :config.sequence_num].to(device)
-            actions = actions[:, :config.sequence_num].to(device)
+            actions = actions[:, -1].to(device)
             with torch.inference_mode():
                 seqModel.eval()
                 ss_pred_nar_, sr_pred_nar_, hc, *_ = seqModel(states, actions, hc)
@@ -178,7 +178,7 @@ def main(config: Config):
             states = past_states[:, -config.sequence_num:]
         else:
             states = states[:, :config.sequence_num].to(device)
-        actions = actions[:, :config.sequence_num].to(device)
+        actions = actions[:, -1].to(device)
         
         with torch.inference_mode():
             seqModel.eval()
@@ -217,7 +217,7 @@ def main(config: Config):
                     tragectory_idx=tid, indices=indices, device=device)
 
             states = past_states[:, -config.sequence_num:]
-            actions = past_actions[:, -config.sequence_num:]
+            actions = past_actions[:, -1]
             with torch.inference_mode():
                 seqModel.eval()
                 ss_pred_ar_, sr_pred_ar_, hc, *_ = seqModel(states, actions, hc)
@@ -244,7 +244,7 @@ def main(config: Config):
 
     plot_states(states_true, states_plot_nar, states_plot_ar, 0)
 
-    plot_states(states_true, states_plot_nar, states_plot_ar, 5)
+    plot_states(states_true, states_plot_nar, states_plot_ar, 1)
 
 
 if __name__ == "__main__":

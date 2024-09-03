@@ -38,27 +38,23 @@ class Dynamics(nn.Module):
     def __init__(self, state_dim: int, action_dim: int, hidden_dim: int, sequence_num: int, 
                  future_num: int, device: torch.device = 'cuda', train_gamma = 0.99):
         super().__init__()
-        self.input_dim = state_dim + action_dim
+        self.input_dim = state_dim
+        
         self.prep = nn.Sequential(
             nn.Flatten(1, -1),
             nn.BatchNorm1d(self.input_dim * sequence_num),
             nn.Unflatten(1, (sequence_num, self.input_dim)),
         )
-        self.lstm = nn.LSTM(input_size=self.input_dim, hidden_size=hidden_dim, num_layers=sequence_num, 
+        
+        self.lstm = nn.LSTM(input_size=self.input_dim, hidden_size=hidden_dim, num_layers=sequence_num,
                             batch_first=True)
-        '''
-        self.mlps =nn.Sequential(
-                nn.LayerNorm(hidden_dim),
-                nn.Linear(hidden_dim, hidden_dim),
-                nn.ReLU(),
-                nn.Dropout(0.2),
-                )
-        '''
         self.post = nn.Sequential(
-            *[nn.Linear(hidden_dim, hidden_dim),
+            *[nn.Linear(hidden_dim+action_dim, hidden_dim),
             nn.LayerNorm(hidden_dim),
-            nn.ReLU()] * 3)
-            
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
+            nn.ReLU()])
         self.linear_state = nn.Linear(hidden_dim, state_dim * future_num)
         self.linear_reward = nn.Linear(hidden_dim, future_num)
         #self.linear_done = nn.Linear(hidden_dim, future_num)
@@ -67,6 +63,7 @@ class Dynamics(nn.Module):
         self.action_dim = action_dim
         self.sequence_num = sequence_num
         self.device = device
+        self.alpha = nn.Parameter(torch.tensor(0.5))
         # (future_num, state_dim)
         #self.state_gammas = Tensor([[train_gamma**j for i in range(state_dim)] for j in range(future_num)]).to(device)
         #self.reward_gammas = Tensor([train_gamma**i for i in range(future_num)]).unsqueeze(1).to(device)
@@ -74,18 +71,29 @@ class Dynamics(nn.Module):
         # print("state_gammas", self.state_gammas.shape, "reward_gammas", self.reward_gammas.shape, "dones_gammas", self.dones_gammas.shape)
  
     def forward(self, state, action, hc_in=None, next_state=None, next_reward=None):
-        state_= state[:,:self.sequence_num,:].to(self.device)
-        action_ = action[:,:self.sequence_num].to(self.device)
+        state_= state.to(self.device)
+        action_ = action.to(self.device)
         #print("action shape", action.shape, "state_ shape", state_.shape)
         #print("i", i, "action[] shape", action[:, i:i+self.sequence_num, :].shape)
-        x = torch.cat((action_, state_), dim=-1)
+        x = state
         x = self.prep(x)
         if hc_in is not None:
             x, (h,c) = self.lstm(x, hc_in)
         else:
             x, (h,c) = self.lstm(x)
         hc = (h.detach(), c.detach())
+        #hc = (h, c)
+        # option 1
         x = x[:,-1,:]
+
+        # option 2
+        #x = h[-1,:,:]
+
+        # option 3
+        #print("x", x.shape, "h", h.shape)
+        #x = (1 - self.alpha) * x[:,-1,:] + self.alpha * h[-1,:,:]
+
+        x = torch.cat([x, action], dim=1)
         x = self.post(x)
         # (batch, 1, state_dim * future_num)
         s = self.linear_state(x).unsqueeze(1)
@@ -102,6 +110,9 @@ class Dynamics(nn.Module):
         if next_state is not None and next_reward is not None:
             #next_state_diff = (((s_ - next_state) * self.state_gammas) ** 2).flatten(1, -1).sum(-1).mean()
             next_state_diff = ((s_ - next_state) ** 2).flatten(1, -1).sum(-1).mean()
+            #emphasis the first 2 dimensions
+            next_state_diff += 0.2 * ((s_[:,:,0:1] - next_state[:,:,0:1]) ** 2).flatten(1,-1).sum(-1).mean()
+            next_state_diff += 2 * ((s_[:,:,1:2] - next_state[:,:,1:2]) ** 2).flatten(1,-1).sum(-1).mean()
             #print("r_", r_.shape, "next_reward", next_reward.shape)
             #reward_diff = (((r_ - next_reward) * self.reward_gammas) ** 2).flatten(1, -1).sum(-1).mean()
             reward_diff = ((r_ - next_reward) ** 2).flatten(1, -1).sum(-1).mean()
@@ -113,7 +124,7 @@ class Dynamics(nn.Module):
         return s_, r_, hc, loss
     
 class GRU_update(nn.Module):
-
+    
     # hidden_size: (state_dim+action_dim)*sequence_num
     # output_size: state_dim+1
     # input_size: state_dim+1
@@ -179,6 +190,9 @@ class GRU_update(nn.Module):
         if next_state is not None and next_reward is not None:
             #next_state_diff = (((state_pred - next_state) * self.state_gammas) ** 2).flatten(1,-1).sum(-1).mean()
             next_state_diff = ((state_pred - next_state) ** 2).flatten(1,-1).sum(-1).mean()
+            # emphasize the first 2 dimensions
+            next_state_diff += 0.2 * ((state_pred[:,:,0:1] - next_state[:,:,0:1]) ** 2).flatten(1,-1).sum(-1).mean()
+            next_state_diff += 2 * ((state_pred[:,:,1:2] - next_state[:,:,1:2]) ** 2).flatten(1,-1).sum(-1).mean()
             #reward_diff = (((reward_pred - next_reward) * self.reward_gammas) ** 2).flatten(1,-1).sum(-1).mean()
             reward_diff = ((reward_pred - next_reward) ** 2).flatten(1,-1).sum(-1).mean()
             #done_diff = (((done_pred - next_done) * self.dones_gammas) ** 2).flatten(1,-1).sum(-1).mean()
@@ -258,6 +272,8 @@ class GRU_update(nn.Module):
         if next_state is not None and next_reward is not None:
             #next_state_diff = (((state_pred - next_state) * self.state_gammas) ** 2).flatten(1,-1).sum(-1).mean()
             next_state_diff = ((state_pred - next_state) ** 2).flatten(1,-1).sum(-1).mean()
+            # emphasize the first 2 dimensions
+            next_state_diff += ((state_pred[:,:,0:2] - next_state[:,:,0:2]) ** 2).flatten(1,-1).sum(-1).mean()
             #reward_diff = (((reward_pred - next_reward) * self.reward_gammas) ** 2).flatten(1,-1).sum(-1).mean()
             reward_diff = ((reward_pred - next_reward) ** 2).flatten(1,-1).sum(-1).mean()
             #done_diff = (((done_pred - next_done) * self.dones_gammas) ** 2).flatten(1,-1).sum(-1).mean()
@@ -279,7 +295,7 @@ class SeqModel(nn.Module):
         )
         '''
         self.dynamics_nn = Dynamics(state_dim, action_dim, hidden_dim, sequence_num, future_num, device, train_gamma)
-        self.gru_nn = GRU_update(state_dim+1, state_dim, (state_dim+action_dim)*sequence_num, state_dim+1, 1, future_num, device, train_gamma)
+        self.gru_nn = GRU_update(state_dim+1, state_dim, state_dim*sequence_num+action_dim, state_dim+1, 1, future_num, device, train_gamma)
         self.use_gru_update = use_gru_update
         self.device = device
         self.state_dim = state_dim
@@ -287,7 +303,11 @@ class SeqModel(nn.Module):
         self.sequence_num = sequence_num
         self.future_num = future_num
         
+    # state (batch, sequence_num, state_dim)
+    # action (batch, action_dim)
+
     def forward(self, state, action, hc_in=None, next_state=None, next_reward=None, detach=False):
+        assert action.ndim == 2
         next_state_pred, next_reward_pred, hc, loss1 = self.dynamics_nn(state, action, hc_in, next_state, next_reward)
         if detach:
             next_state_pred = next_state_pred.detach()
@@ -295,7 +315,8 @@ class SeqModel(nn.Module):
         loss2 = None
         if self.use_gru_update:
             assert state.shape[1] >= self.sequence_num
-            input = torch.cat((state[:,:self.sequence_num], action[:,:self.sequence_num]), dim=-1)
+            state_flat = state.flatten(1, -1)
+            input = torch.cat((state_flat, action), dim=-1)
             pred_features = torch.cat((next_state_pred, next_reward_pred), dim=-1)
             next_state_pred, next_reward_pred, loss2 = self.gru_nn(pred_features, input, next_state, next_reward)
         return next_state_pred, next_reward_pred, hc, loss1, loss2
@@ -467,7 +488,7 @@ class MyEnv:
     def _cal_sensitivity(self, states: ObsType, actions: ActType, next_state: ObsType, reward, K=10, sigma=0.01):
         # generate perturbations of size (K, states.shape[0], states.shape[1])
         states_noise = torch.normal(mean=0, std=sigma, size=(K, states.shape[1], states.shape[2])).to(self.device)
-        actions_noise = torch.normal(mean=0, std=sigma, size=(K, actions.shape[1], actions.shape[2])).to(self.device)
+        actions_noise = torch.normal(mean=0, std=sigma, size=(K, actions.shape[1])).to(self.device)
         noisy_states = states + states_noise
         noisy_actions = actions + actions_noise
         noisy_nstate, noisy_reward, *_ = self.seq_model(noisy_states, noisy_actions)
@@ -487,7 +508,7 @@ class MyEnv:
         assert self.states.shape[0] == self.actions.shape[0]
         assert self.states.shape[0] >= self.sequence_num
         states_ = self.states[-self.sequence_num:].unsqueeze(0)
-        actions_ = self.actions[-self.sequence_num:].unsqueeze(0)
+        actions_ = self.actions[-1].unsqueeze(0)
 
         self.seq_model.eval()
         next_state, reward, self.hc, *_ = self.seq_model(states_, actions_, hc_in=self.hc)

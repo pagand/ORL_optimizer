@@ -91,13 +91,15 @@ def main(config: Config):
                                                                 indices=indices,
                                                                 device=device)
                 states = past_states[:, -config.sequence_num:].to(device)
-                actions = past_actions[:, -config.sequence_num:].to(device)
+                actions = past_actions[:, -1].to(device)
                 seqModel.train()
                 next_states_pred, rewards_pred, hc, loss1, loss2 = seqModel(states, actions, hc, next_state=next_states, 
                                                                         next_reward=next_rewards)
 
                 seq_optimizer.zero_grad()
-                loss2.backward()
+                loss = loss1 + 3 * loss2 if loss2 is not None else loss1
+                #loss = loss2
+                loss.backward()
                 #loss1.backward()                
                 seq_optimizer.step()
 
@@ -153,7 +155,7 @@ def main(config: Config):
                             data_holdout, 1, config.future_num, 
                             tragectory_idx=tid, indices=indices, device=device)
                     states = past_states[:, -config.sequence_num:].to(device)
-                    actions = past_actions[:, -config.sequence_num:].to(device)
+                    actions = past_actions[:, -1].to(device)
 
                     with torch.inference_mode():
                         seqModel.eval()

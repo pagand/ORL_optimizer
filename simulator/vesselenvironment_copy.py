@@ -383,10 +383,12 @@ class VesselEnvironment(gym.Env):
         while self.run and self.current_step < self.max_steps and not self.done:
             self.status = "Running ..."
             self._next_step(flag=True)
-            time.sleep(0.5)
             #self.root.update()
             # make delay
             #self.root.after(500)
+
+            QtWidgets.QApplication.processEvents()
+            time.sleep(0.5)
 
         if self.current_step > self.max_steps:
             self.status = "Reached max steps"

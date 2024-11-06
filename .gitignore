@@ -22,6 +22,14 @@ RL/logs/
 RL/.DS_Store
 
 
+VesselModel/Step x/
+VesselModel/Step1/__pycache__/
+VesselModel/Step1/convention.py
+data/Features/
+# VesselModel/Step3/
+data/Plot/
 *wandb*
 *__pycache__*
 *__tmp__*
+*queenCsvOut*
+*conversion.py

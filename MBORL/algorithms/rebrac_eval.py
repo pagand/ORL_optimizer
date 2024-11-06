@@ -168,6 +168,8 @@ def augment_replay_buffer(
                 total_reward += float(reward)
                 #total_elbo += float(elbo)
                 step+=1
+
+            # add condition 3
                 
                 #print("sim reward", reward, "total_reward", total_reward, "step", step, "done", done)   
             if np.isnan(total_reward) or abs(total_reward) > 1e6:
@@ -187,7 +189,7 @@ def augment_replay_buffer(
                     e_data[c][0],
                     e_data[c][1],
                     e_data[c][2],
-                    e_data[c+1][1],
+                    e_data[c+1][1], # next action
                     reward_,
                     done                    
                 )

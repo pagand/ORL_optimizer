@@ -178,7 +178,7 @@ def main(config: Config):
                 })
         # augment data
         if config.use_augment_data and epoch % config.augment_per == 0 and epoch > 0:
-            augment_replay_buffer(
+            returns = augment_replay_buffer(
                 rbuffer,
                 myenv,
                 actor_state.get_model(),

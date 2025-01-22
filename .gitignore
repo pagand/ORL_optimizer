@@ -33,3 +33,11 @@ data/Plot/
 *__tmp__*
 *queenCsvOut*
 *conversion.py
+
+
+
+.venv
+data/VesselSimulator/feature1.csv
+data/VesselSimulator/minmax_scaler.pkl
+data/VesselSimulator/rl_data.pkl
+data/VesselSimulator/scaler.pkl

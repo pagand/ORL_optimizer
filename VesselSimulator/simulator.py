@@ -89,9 +89,9 @@ class CustomEnv(gym.Env):
         return self.state
     
 if __name__ == '__main__':
-    model_path = './data/model_2019_2020.pkl'
-    scaler_path = './data/scaler.pkl'
-    start_trip_path = './data/start_trip.pkl'
+    model_path = './data/VesselSimulator/model_2019_2020.pkl'
+    scaler_path = './data/VesselSimulator/scaler.pkl'
+    start_trip_path = './data/VesselSimulator/start_trip.pkl'
     env = CustomEnv(model_path, start_trip_path, scaler_path = scaler_path)
     print(env.reset())
     print(env.step([0.5, 0.5, 0]))

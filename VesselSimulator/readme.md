@@ -12,3 +12,10 @@ pip install -r VesselSimulator/simulatorrequirements.txt
 
 
 Install torch locally given this (URL)[https://pytorch.org/get-started/locally/].
+
+
+install wandb if you want to track training. 
+
+```bash
+pip3 install wandb
+```

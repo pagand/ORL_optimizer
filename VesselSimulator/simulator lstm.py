@@ -33,7 +33,10 @@ class CustomEnv(gym.Env):
             self.start_trip = pickle.load(f)['X1']
         if scaler_path:
             with open(scaler_path, 'rb') as f:
-                self.scaler = pickle.load(f)['scaler']
+                content = pickle.load(f)
+                self.scaler = content['scaler']
+                self.feature_columns = content['feature_columns']
+                self.output_columns = content['output_columns']
         else:
             self.scaler = None
         
@@ -54,6 +57,18 @@ class CustomEnv(gym.Env):
         self.elapsed_time = 0
         self.hidden = None
         self.device = device
+        self.goal = [[49.19541486727186 ,-123.9551366316478 ], [49.3788352862298 , -123.27131442779599 ]] # for [direction 0, direction 1]
+
+    def reset(self, seed=None):
+        super().reset(seed=seed)
+        np.random.seed(seed)
+        
+        # Select a random trip_id and initialize state
+        start_index = np.random.randint(len(self.start_trip))
+        state = self.start_trip[start_index][:22] 
+        self.state = torch.tensor(state, dtype=torch.float32).to(device)
+        self.elapsed_time = 0
+        return self.state
     
     def step(self, action):
         info = {}
@@ -70,9 +85,20 @@ class CustomEnv(gym.Env):
         if self.scaler:
             aug = torch.cat([self.state.unsqueeze(0), prediction.squeeze(0)], dim=1)
             org = self.scaler.inverse_transform(aug.cpu().detach().numpy())[0]
-            info['state_org'] = org[:self.input_size]
-            info['output_org'] = org[self.input_size:self.input_size+4]
+            # create a dictionary with self.feature_columns as keys and info['state_org'] as values
+            info['state_org'] = dict(zip(self.feature_columns, org[:self.input_size]))
+            info['output_org'] = dict(zip(self.output_columns, org[self.input_size:]))
         
+        # update states
+        '''
+        'SPEED', 'HEADING', 'MODE', 'ENGINE_FLOWTEMPA', 'PITCH', 'POWER', 'STW',
+       'WIND_ANGLE', 'WIND_SPEED', 'direction', 'distance', 'elapsed_time',
+       'cumulative_SFC', 'current', 'pressure', 'weathercode', 'is_weekday',
+       'effective_wind_factor', 'PSFC', 'PSOG', 'PLAT', 'PLON'
+        '''
+        self.elapsed_time += 1
+
+
         # Extract outputs
         SFC, SOG, LATITUDE, LONGITUDE = prediction[0][0][:4]
         
@@ -92,23 +118,17 @@ class CustomEnv(gym.Env):
         reward = r1 + r2 + r3
         
         # Increment time and check termination
-        self.elapsed_time += 1
+        
         done = self.elapsed_time > 1.5 * self.max_allowed or r3 > 0
         
         
         
         return self.state, reward, done, False, info
     
-    def reset(self, seed=None):
-        super().reset(seed=seed)
-        np.random.seed(seed)
-        
-        # Select a random trip_id and initialize state
-        start_index = np.random.randint(len(self.start_trip))
-        state = self.start_trip[start_index][:22] 
-        self.state = torch.tensor(state, dtype=torch.float32).to(device)
-        self.elapsed_time = 0
-        return self.state
+    
+
+    
+    
     
 if __name__ == '__main__':
     model_path = './data/VesselSimulator/lstm_model.pth'

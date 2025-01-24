@@ -62,7 +62,7 @@ def train_step(model, data_loader, criterion, optimizer, device, autoregressive_
         epoch_loss += batch_loss.item()
         return epoch_loss
 
-def main(train_path, retrainer):
+def main(train_path, save_path, retrainer):
     # Hyperparameters
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     hidden_size = 128
@@ -75,6 +75,10 @@ def main(train_path, retrainer):
     data = pickle.load(open(train_path, 'rb'))
     inp = data['train']['inp']
     out = data['train']['out']
+
+    # crop the seq to avoid zeros
+    inp = inp[:, :110, :]
+    out = out[:, :110, :]
 
     in_test = data['test']['inp']
     out_test = data['test']['out']
@@ -98,8 +102,12 @@ def main(train_path, retrainer):
     model = AutoregressiveLSTM(input_size, output_size, hidden_size, num_layers).to(device)
     # update the model params with the best model if retraining
     if retrainer:
-        model.load_state_dict(torch.load("./data/lstm_model.pth"))
-        print("Retraining the model from the best version found")
+        try:
+            model.load_state_dict(torch.load(save_path))
+            print("Retraining the model from the best version found")
+        except:
+            print("No model found to retrain")
+        
     criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     # Training Loop
@@ -121,7 +129,7 @@ def main(train_path, retrainer):
         # Log metrics to wandb
         # wandb.log({"epoch_loss": epoch_loss / len(data_loader), "epoch": epoch + 1})
     print(f"Best model found at epoch {best_epoch}")
-    torch.save(best_model.state_dict(), "./data/lstm_model.pth")
+    torch.save(best_model.state_dict(), save_path)
 
     print("Training complete!")
     wandb.finish()
@@ -129,4 +137,5 @@ def main(train_path, retrainer):
 if __name__ == "__main__":
     retrainer = True
     train_path = './data/VesselSimulator/data_train.pkl'
-    main(train_path, retrainer)
+    save_path = './data/VesselSimulator/lstm_model_crop.pth'
+    main(train_path, save_path, retrainer)

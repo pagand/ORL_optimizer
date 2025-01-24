@@ -3,6 +3,7 @@ import numpy as np
 import pickle
 import torch
 import torch.nn as nn
+import time
 
 
 class AutoregressiveLSTM(nn.Module):
@@ -25,6 +26,9 @@ class CustomEnv(gym.Env):
         num_layers = 2
 
         self.model = AutoregressiveLSTM(self.input_size, self.output_size, hidden_size, num_layers).to(device)
+
+        # print number of model parameters
+        # print(f"\n\n\n\n\nNumber of model parameters: {sum(p.numel() for p in self.model.parameters() if p.requires_grad)}")
         
         # Load model, scaler, and start trip data
         with open(model_path, 'rb') as f:
@@ -60,29 +64,33 @@ class CustomEnv(gym.Env):
         self.goal = [[49.19541486727186 ,-123.9551366316478 ], [49.3788352862298 , -123.27131442779599 ]] # for [direction 0, direction 1]
         self.max_distance = 0.708 # actual distance
 
-    def reset(self, seed=None):
+    def reset(self, initial_state=None):
+        seed = 20
         super().reset(seed=seed)
         np.random.seed(seed)
         
         # Select a random trip_id and initialize state
-        self.start_index = np.random.randint(len(self.start_trip))
-        state = self.start_trip[self.start_index][:22] 
+        if initial_state is not None:
+            state = initial_state
+        else:
+            id = np.random.randint(len(self.start_trip))
+            state = self.start_trip[id][:22] 
         self.state = torch.tensor(state, dtype=torch.float32)
         self.elapsed_time = 0
         self.hidden = None
         return self.state
     
-    def step(self, action): 
+    def step(self, action=None): 
         info = {}
         # Split action into SPEED, HEADING, and MODE
-        if action:
+        if action is not None:
             speed, heading = action[:2]
             mode = int(action[2])  # MODE is discrete
             self.state[:3] = torch.tensor([speed, heading, mode])
         
         # if no action is given, use the previous action (get from the start_trip)
         
-        inp = self.state.unsqueeze(0).unsqueeze(1).to(device)
+        inp = self.state.unsqueeze(0).unsqueeze(1).to(self.device)
         # Predict next state
         prediction, self.hidden = self.model(inp, self.hidden)
         info['prediction'] = prediction.squeeze(0).squeeze(0).cpu().detach().numpy()
@@ -122,17 +130,34 @@ class CustomEnv(gym.Env):
         return self.state, reward, done, info
     
     
-
-    
-    
-    
 if __name__ == '__main__':
     model_path = './data/VesselSimulator/lstm_model.pth'
     scaler_path = './data/VesselSimulator/scaler.pkl'
     start_trip_path = './data/VesselSimulator/start_trip.pkl'
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cpu")
+    # time it, measure the running time of the next line
+    start = time.time()
     env = CustomEnv(model_path, start_trip_path, scaler_path = scaler_path, device = device)
-    print(env.reset())
-    state, reward, done, info = env.step(0)
-    state, reward, done, info = env.step(0)
+    t1 = time.time()
+    state = env.reset()
+    t2 = time.time()
+    state, reward, done, info = env.step()
+    t3 = time.time()
+    print(t1-start, t2-t1, t3-t2)
     print(env.step([0.5, 0.5, 0])) # SPEED, HEADING, MODE
+
+ 
+
+    
+
+
+    
+    
+
+
+
+
+
+
+    

@@ -62,15 +62,15 @@ def train_step(model, data_loader, criterion, optimizer, device, autoregressive_
         epoch_loss += batch_loss.item()
         return epoch_loss
 
-def main(train_path):
+def main(train_path, retrainer):
     # Hyperparameters
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     hidden_size = 128
     num_layers = 2
     batch_size = 16
     learning_rate = 0.001
-    epochs = 50
-    autoregressive_steps = 5 # Steps to predict ahead
+    epochs = 100
+    autoregressive_steps = 10 # Steps to predict ahead
     # Dataset Preparation (Replace this with your numpy arrays)
     data = pickle.load(open(train_path, 'rb'))
     inp = data['train']['inp']
@@ -96,6 +96,10 @@ def main(train_path):
     input_size = inp.shape[2] - 1  # Exclude done state 
     output_size = out.shape[2]
     model = AutoregressiveLSTM(input_size, output_size, hidden_size, num_layers).to(device)
+    # update the model params with the best model if retraining
+    if retrainer:
+        model.load_state_dict(torch.load("./data/lstm_model.pth"))
+        print("Retraining the model from the best version found")
     criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     # Training Loop
@@ -117,11 +121,12 @@ def main(train_path):
         # Log metrics to wandb
         # wandb.log({"epoch_loss": epoch_loss / len(data_loader), "epoch": epoch + 1})
     print(f"Best model found at epoch {best_epoch}")
-    # torch.save(best_model.state_dict(), "./data/lstm_model.pth")
+    torch.save(best_model.state_dict(), "./data/lstm_model.pth")
 
     print("Training complete!")
     wandb.finish()
 
 if __name__ == "__main__":
+    retrainer = True
     train_path = './data/VesselSimulator/data_train.pkl'
-    main(train_path)
+    main(train_path, retrainer)

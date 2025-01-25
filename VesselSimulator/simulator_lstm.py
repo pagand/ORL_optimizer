@@ -65,7 +65,7 @@ class CustomEnv(gym.Env):
         self.max_distance = 0.708 # actual distance
 
     def reset(self, initial_state=None):
-        seed = 20
+        seed = 10
         super().reset(seed=seed)
         np.random.seed(seed)
         
@@ -78,18 +78,21 @@ class CustomEnv(gym.Env):
         self.state = torch.tensor(state, dtype=torch.float32)
         self.elapsed_time = 0
         self.hidden = None
+        self.direction = int(state[9])
+        self.state_avg_org = self.scaler.inverse_transform(self.state_avg)[self.direction]
         return self.state
     
-    def step(self, action=None): 
+    def step(self, action, state_measured=None): 
         info = {}
         # Split action into SPEED, HEADING, and MODE
-        if action is not None:
+        if state_measured is None:
             speed, heading = action[:2]
             mode = int(action[2])  # MODE is discrete
             self.state[:3] = torch.tensor([speed, heading, mode])
-        
-        # if no action is given, use the previous action (get from the start_trip)
-        
+            state = self.state_avg_org  # since we are not measuring, let's use the average
+        else:
+            state = state_measured  # Non-atoregressive #TODO: check how to deal with AR
+                
         inp = self.state.unsqueeze(0).unsqueeze(1).to(self.device)
         # Predict next state
         prediction, self.hidden = self.model(inp, self.hidden)
@@ -98,8 +101,8 @@ class CustomEnv(gym.Env):
         # compute the original values
         aug = torch.cat([self.state.unsqueeze(0), prediction.squeeze(0).cpu().detach()], dim=1).numpy()
         org = self.scaler.inverse_transform(aug)[0]
-        direction = int(org[9])
-        state_avg_org = self.scaler.inverse_transform(self.state_avg)[direction]
+
+        
         # create a dictionary with self.feature_columns as keys and info['state_org'] as values
         info['state_org'] = dict(zip(self.feature_columns, org[:self.input_size]))
         info['output_org'] = dict(zip(self.output_columns, org[self.input_size:]))
@@ -110,13 +113,17 @@ class CustomEnv(gym.Env):
        '12 cumulative_SFC', '13 current', '14 pressure', '15 weathercode', '16 is_weekday',
        '17 effective_wind_factor', '18 PSFC', '19 PSOG', '20 PLAT', '21 PLON'
         '''
-        org[3:9] = state_avg_org[3:9]
-        org[10] = np.sqrt((self.goal[direction][0]-info['output_org']['LAT'])**2+(self.goal[direction][1]-info['output_org']['LON'])**2)
+        org[3:9] = state[3:9]
+        org[10] = np.sqrt((self.goal[self.direction][0]-info['output_org']['LAT'])**2+(self.goal[self.direction][1]-info['output_org']['LON'])**2)
         self.elapsed_time += 1
         org[11] = self.elapsed_time
         org[12] += info['output_org']['SFC']
-        org[13:18] = state_avg_org[13:18]
-        org[18:22] = info['output_org']['SFC'], info['output_org']['SOG'], info['output_org']['LAT'], info['output_org']['LON']
+        org[13:18] = state[13:18]
+        if state_measured is None:
+            org[18:22] = info['output_org']['SFC'], info['output_org']['SOG'], info['output_org']['LAT'], info['output_org']['LON']
+        else:
+            # Non-atoregressive #TODO: check how to deal with AR
+            org[18:22] = state[18:22]  # we use the actual measurements for previous observation
 
         # convert to scaled values
         aug = self.scaler.transform(org.reshape(1, -1))[0]
@@ -142,10 +149,9 @@ if __name__ == '__main__':
     t1 = time.time()
     state = env.reset()
     t2 = time.time()
-    state, reward, done, info = env.step()
+    state, reward, done, info = env.step([0.5, 0.5, 0]) # SPEED, HEADING, MODE
     t3 = time.time()
     print(t1-start, t2-t1, t3-t2)
-    print(env.step([0.5, 0.5, 0])) # SPEED, HEADING, MODE
 
  
 

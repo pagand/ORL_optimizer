@@ -6,61 +6,89 @@ import numpy as np
 import wandb
 import pickle
 
+
+
 # Initialize wandb
-# wandb.init(project="autoregressive_lstm")
+wandb.init(project="Vessel Simulator" , entity="marslab", name = "LSTM_AR")
 
 # LSTM Model
 class AutoregressiveLSTM(nn.Module):
-    def __init__(self, input_size, output_size, hidden_size, num_layers):
+    def __init__(self, input_size, output_size, hidden_size, num_layers, dropout=0.1):
         super(AutoregressiveLSTM, self).__init__()
-        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, dropout=dropout)
         self.fc = nn.Linear(hidden_size, output_size)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x, hidden=None):
         out, hidden = self.lstm(x, hidden)
+        out = self.dropout(out)  # Apply dropout
         out = self.fc(out)
         return out, hidden
 
-def train_step(model, data_loader, criterion, optimizer, device, autoregressive_steps, train=True):
+def train_step(model, data_loader, criterion, optimizer, device, current_epoch, total_epochs, max_ar_steps, train=True):
     epoch_loss = 0
+
+    lambda_ar = min(1.0, current_epoch / total_epochs)  # Increase AR importance over epochs
+    lambda_nar = 1.0 - lambda_ar  # Decrease reliance on ground-truth
+
+    autoregressive_steps = max(1, int(lambda_ar * max_ar_steps))  # Increase AR steps progressively
+
+
+
     for batch in data_loader:
         inp_batch, out_batch = batch
         inp_batch, out_batch = inp_batch.to(device), out_batch.to(device)
 
         # Initialize hidden state
-        hidden = None
-
-        # compute non-autoregressive for the whole sequence
-        # out_nar, _ = model(inp_batch, hidden)
+        hidden_start = None
 
         # Process each sequence in the batch
-        batch_loss = 0
-        count = 0
+        batch_loss, loss_nar, loss_ar = 0, 0, 0
+        count_ar, count_nar = 0, 0
         for t in range(inp_batch.shape[1]):  # True clock time
     
             current_input = inp_batch[:, t, 1:].clone()
+
+            hidden = hidden_start
             
             
             for s in range(t, min(t+autoregressive_steps, inp_batch.shape[1]-1)):  
                 done_mask = inp_batch[:, s, 0] == 0
                 predictions, hidden = model(current_input.unsqueeze(1), hidden)
+                if s == t: # First step: store hidden state
+                    hidden_start = hidden
                 current_input = current_input.clone()
                 current_input[:, -4:] = predictions.squeeze(1)[:,:4]
 
                 target = out_batch[:, s, :].unsqueeze(1)
                 if done_mask.sum() > 0:
-                    count += 1
                     step_loss = criterion(predictions[done_mask], target[done_mask])
                     batch_loss += step_loss
+
+                    if s == t: # NAR loss
+                        loss_nar += step_loss
+                        count_nar += 1
+                    else: # AR loss
+                        loss_ar += step_loss
+                        count_ar += 1
+                        
+
+        # Compute weighted loss
+        loss_nar /= count_nar
+        loss_ar = loss_ar/count_ar if count_ar else torch.tensor(0).to(device)
+        batch_loss /= (count_ar + count_nar)
+
+        final_loss = lambda_nar * loss_nar + lambda_ar * loss_ar  # Weighted loss
+        # final_loss = batch_loss   # Unweighted loss
 
         # Backpropagation and optimizer step
         if train:
             optimizer.zero_grad()
-            (batch_loss /count ).backward()
+            final_loss.backward()
             optimizer.step()
 
-        epoch_loss += batch_loss.item()
-        return epoch_loss
+        epoch_loss += final_loss.item()
+        return epoch_loss/ len(data_loader), loss_nar.item(), loss_ar.item()
 
 def main(train_path, save_path, retrainer):
     # Hyperparameters
@@ -69,8 +97,9 @@ def main(train_path, save_path, retrainer):
     num_layers = 2
     batch_size = 16
     learning_rate = 0.001
-    epochs = 100
-    autoregressive_steps = 10 # Steps to predict ahead
+    max_ar_steps = 5 # Steps to predict ahead, 1 for NAR 
+    epochs = 40*max_ar_steps # total epochs
+    
     # Dataset Preparation (Replace this with your numpy arrays)
     data = pickle.load(open(train_path, 'rb'))
     inp = data['train']['inp']
@@ -114,10 +143,10 @@ def main(train_path, save_path, retrainer):
     best_loss = np.inf
     for epoch in range(epochs):
         model.train()
-        epoch_loss = train_step(model, data_loader, criterion, optimizer, device, autoregressive_steps, train=True)
+        epoch_loss, loss_nar, loss_ar = train_step(model, data_loader, criterion, optimizer, device, epoch, epochs, max_ar_steps, train=True)
         # do the test
         model.eval()
-        epoch_loss_test = train_step(model, data_loader_test, criterion, optimizer, device, autoregressive_steps, train=False) 
+        epoch_loss_test, loss_nar_test, loss_ar_test = train_step(model, data_loader_test, criterion, optimizer, device,  epoch, epochs, max_ar_steps, train=False) 
         if epoch_loss_test < best_loss:
             best_loss = epoch_loss_test
             best_model = model
@@ -127,7 +156,9 @@ def main(train_path, save_path, retrainer):
             print(f"Epoch {epoch + 1}: Train Loss: {epoch_loss / len(data_loader)}, Test Loss: {epoch_loss_test / len(data_loader_test)}")
 
         # Log metrics to wandb
-        # wandb.log({"epoch_loss": epoch_loss / len(data_loader), "epoch": epoch + 1})
+        wandb.log({"epoch_loss": epoch_loss, "val_loss": epoch_loss_test,
+                  "loss_nar": loss_nar, "loss_ar" : loss_ar,
+                    "loss_nar_test":loss_nar_test, "loss_ar_test":loss_ar_test,"epoch": epoch + 1})
     print(f"Best model found at epoch {best_epoch}")
     torch.save(best_model.state_dict(), save_path)
 
@@ -137,5 +168,5 @@ def main(train_path, save_path, retrainer):
 if __name__ == "__main__":
     retrainer = True
     train_path = './data/VesselSimulator/data_train.pkl'
-    save_path = './data/VesselSimulator/lstm_model_crop.pth'
+    save_path = './data/VesselSimulator/lstm_model_ar.pth'
     main(train_path, save_path, retrainer)

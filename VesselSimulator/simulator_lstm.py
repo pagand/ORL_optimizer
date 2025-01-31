@@ -7,13 +7,15 @@ import time
 
 
 class AutoregressiveLSTM(nn.Module):
-    def __init__(self, input_size, output_size, hidden_size, num_layers):
+    def __init__(self, input_size, output_size, hidden_size, num_layers, dropout=0):
         super(AutoregressiveLSTM, self).__init__()
-        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, dropout=dropout)
         self.fc = nn.Linear(hidden_size, output_size)
+        self.dropout = nn.Dropout(dropout*0.1)
 
     def forward(self, x, hidden=None):
         out, hidden = self.lstm(x, hidden)
+        out = self.dropout(out)  # Apply dropout
         out = self.fc(out)
         return out, hidden
 
@@ -59,7 +61,6 @@ class CustomEnv(gym.Env):
         
         # Environment state
         self.state = None
-        self.elapsed_time = 0
         self.device = device
         self.goal = [[49.19541486727186 ,-123.9551366316478 ], [49.3788352862298 , -123.27131442779599 ]] # for [direction 0, direction 1]
         self.max_distance = 0.708 # actual distance
@@ -78,24 +79,63 @@ class CustomEnv(gym.Env):
         self.state = torch.tensor(state, dtype=torch.float32)
         self.elapsed_time = 0
         self.hidden = None
+        self.hidden_ar = None
         self.direction = int(state[9])
         self.state_avg_org = self.scaler.inverse_transform(self.state_avg)[self.direction]
         return self.state
     
-    def step(self, action, state_measured=None): 
+    def step(self, action, next_state_measured=None): 
+        '''
+        IMPORTANT:
+        - Saceled variables are:
+            self.state, action, next_state_measured, prediction, info['prediction']
+        - Original variables are:
+            new_state, self.state_avg_org, info['state_org'], info['output_org']
+        '''
         info = {}
+        # check if all actions are between 0 and 1 otherwise raise error
+        if not all(0<=a<=1 for a in action):
+            raise ValueError('Action values should be between 0 and 1')
         # Split action into SPEED, HEADING, and MODE
-        if state_measured is None:
-            speed, heading = action[:2]
-            mode = int(action[2])  # MODE is discrete
-            self.state[:3] = torch.tensor([speed, heading, mode])
-            state = self.state_avg_org  # since we are not measuring, let's use the average
-        else:
-            state = state_measured  # Non-atoregressive #TODO: check how to deal with AR
-                
+        speed, heading = action[:2]
+        mode = int(action[2])  # MODE is discrete
+        self.state[:3] = torch.tensor([speed, heading, mode])
+
+        # if we have a next_state_measured, we should use it to update the state
+        if next_state_measured is not None:
+            # use the state_measured for current state values
+            self.state[3:self.input_size] = torch.tensor(next_state_measured, dtype=torch.float32)
+
+            aug = np.concat((np.expand_dims(np.concat((action,next_state_measured) ),0), np.zeros((1, self.output_size))), axis=1)
+            current_state = self.scaler.inverse_transform(aug)[0][:self.input_size]
+            
+            # update the env properties
+            self.elapsed_time = current_state[11]
+            # check if the direction is the same, raise error if not
+            if self.direction != int(current_state[9]):
+                raise ValueError('Direction changed during the trip')
+
+
+
         inp = self.state.unsqueeze(0).unsqueeze(1).to(self.device)
+
+        # decide between AR and NAR
+        if next_state_measured is None: # AR
+            hidden = self.hidden_ar
+        else:
+            hidden = self.hidden
+
         # Predict next state
-        prediction, self.hidden = self.model(inp, self.hidden)
+        prediction, hidden = self.model(inp, hidden)
+
+        if next_state_measured is None: #AR
+            self.hidden_ar = hidden
+        else: # NAR
+            # if NAR, both hidden and hidden_ar should be updated
+            self.hidden = hidden
+            self.hidden_ar = hidden
+
+        
         info['prediction'] = prediction.squeeze(0).squeeze(0).cpu().detach().numpy()
 
         # compute the original values
@@ -113,18 +153,17 @@ class CustomEnv(gym.Env):
        '12 cumulative_SFC', '13 current', '14 pressure', '15 weathercode', '16 is_weekday',
        '17 effective_wind_factor', '18 PSFC', '19 PSOG', '20 PLAT', '21 PLON'
         '''
-        org[3:9] = state[3:9]
-        org[10] = np.sqrt((self.goal[self.direction][0]-info['output_org']['LAT'])**2+(self.goal[self.direction][1]-info['output_org']['LON'])**2)
+
+
         self.elapsed_time += 1
+        org[3:9] = self.state_avg_org[3:9]
+        org[10] = np.sqrt((self.goal[self.direction][0]-info['output_org']['LAT'])**2+(self.goal[self.direction][1]-info['output_org']['LON'])**2)
         org[11] = self.elapsed_time
         org[12] += info['output_org']['SFC']
-        org[13:18] = state[13:18]
-        if state_measured is None:
-            org[18:22] = info['output_org']['SFC'], info['output_org']['SOG'], info['output_org']['LAT'], info['output_org']['LON']
-        else:
-            # Non-atoregressive #TODO: check how to deal with AR
-            org[18:22] = state[18:22]  # we use the actual measurements for previous observation
+        org[13:18] = self.state_avg_org[13:18]
+        org[18:22] = info['output_org']['SFC'], info['output_org']['SOG'], info['output_org']['LAT'], info['output_org']['LON']
 
+        
         # convert to scaled values
         aug = self.scaler.transform(org.reshape(1, -1))[0]
         self.state = torch.tensor(aug[:self.input_size], dtype=torch.float32)
@@ -138,20 +177,38 @@ class CustomEnv(gym.Env):
     
     
 if __name__ == '__main__':
-    model_path = './data/VesselSimulator/lstm_model.pth'
+    model_path = './data/VesselSimulator/lstm_model_ar5.pth'
     scaler_path = './data/VesselSimulator/scaler.pkl'
     start_trip_path = './data/VesselSimulator/start_trip.pkl'
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    device = torch.device("cpu")
-    # time it, measure the running time of the next line
+    # device = torch.device("cpu")
+
+
     start = time.time()
     env = CustomEnv(model_path, start_trip_path, scaler_path = scaler_path, device = device)
-    t1 = time.time()
-    state = env.reset()
-    t2 = time.time()
-    state, reward, done, info = env.step([0.5, 0.5, 0]) # SPEED, HEADING, MODE
-    t3 = time.time()
-    print(t1-start, t2-t1, t3-t2)
+    # t1 = time.time()
+    # state = env.reset()
+    # t2 = time.time()
+    # state, reward, done, info = env.step([0.5, 0.5, 0]) # SPEED, HEADING, MODE
+    # t3 = time.time()
+    # print(t1-start, t2-t1, t3-t2)
+
+
+    # test 2
+    test_path = './data/VesselSimulator/data_test.pkl'
+    with open(test_path, 'rb') as f:
+        content = pickle.load(f)
+        X1_test_state = content['X1'][0] 
+        X1_test_target = content['X1'][1]
+
+    i = 0 # select one test trip from 0 to 4 
+    current_trip = X1_test_state[i, :, 1:] # ignoring the first state which is done state in dataset
+    env.reset(current_trip[0][:22]) # without the done flag
+    state, reward, done, info = env.step(current_trip[0][:3],current_trip[0][3:22]) # step 1
+    state, reward, done, info = env.step(current_trip[1][:3],current_trip[1][3:22]) # step 2
+    state, reward, done, info = env.step(current_trip[2][:3]) # step 2, AR for 3
+    state, reward, done, info = env.step(current_trip[3][:3]) # step 2, AR for 4
+    state, reward, done, info = env.step(current_trip[2][:3],current_trip[2][3:22]) # step 3
 
  
 

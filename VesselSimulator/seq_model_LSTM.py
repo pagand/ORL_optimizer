@@ -9,15 +9,15 @@ import pickle
 
 
 # Initialize wandb
-wandb.init(project="Vessel Simulator" , entity="marslab", name = "LSTM_AR")
+wandb.init(project="Vessel Simulator" , entity="marslab", name = "LSTM_AR_h5")
 
 # LSTM Model
 class AutoregressiveLSTM(nn.Module):
-    def __init__(self, input_size, output_size, hidden_size, num_layers, dropout=0.1):
+    def __init__(self, input_size, output_size, hidden_size, num_layers, dropout=0):
         super(AutoregressiveLSTM, self).__init__()
         self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, dropout=dropout)
         self.fc = nn.Linear(hidden_size, output_size)
-        self.dropout = nn.Dropout(dropout)
+        self.dropout = nn.Dropout(dropout*0.1)
 
     def forward(self, x, hidden=None):
         out, hidden = self.lstm(x, hidden)
@@ -25,15 +25,9 @@ class AutoregressiveLSTM(nn.Module):
         out = self.fc(out)
         return out, hidden
 
-def train_step(model, data_loader, criterion, optimizer, device, current_epoch, total_epochs, max_ar_steps, train=True):
+def train_step(model, data_loader, criterion, optimizer,scheduler, device, lambda_ar, autoregressive_steps, train=True):
     epoch_loss = 0
-
-    lambda_ar = min(1.0, current_epoch / total_epochs)  # Increase AR importance over epochs
     lambda_nar = 1.0 - lambda_ar  # Decrease reliance on ground-truth
-
-    autoregressive_steps = max(1, int(lambda_ar * max_ar_steps))  # Increase AR steps progressively
-
-
 
     for batch in data_loader:
         inp_batch, out_batch = batch
@@ -88,17 +82,29 @@ def train_step(model, data_loader, criterion, optimizer, device, current_epoch, 
             optimizer.step()
 
         epoch_loss += final_loss.item()
-        return epoch_loss/ len(data_loader), loss_nar.item(), loss_ar.item()
+    
+    epoch_loss/= len(data_loader)
+    if train:
+        # log to wandb
+        wandb.log({"epoch_loss": epoch_loss, "loss_nar": loss_nar.item(), "loss_ar" : loss_ar.item()})
+
+    else:
+        scheduler.step(epoch_loss)
+        wandb.log({"epoch_loss_val": epoch_loss, "loss_nar_val": loss_nar.item(), "loss_ar_val" : loss_ar.item(),
+                     "learning_rate": optimizer.param_groups[0]['lr']})
+
+    
+    return epoch_loss
 
 def main(train_path, save_path, retrainer):
     # Hyperparameters
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     hidden_size = 128
     num_layers = 2
-    batch_size = 16
-    learning_rate = 0.001
+    batch_size = 512
+    learning_rate = 0.005
     max_ar_steps = 5 # Steps to predict ahead, 1 for NAR 
-    epochs = 40*max_ar_steps # total epochs
+    epochs = 50*max_ar_steps # total epochs
     
     # Dataset Preparation (Replace this with your numpy arrays)
     data = pickle.load(open(train_path, 'rb'))
@@ -128,7 +134,7 @@ def main(train_path, save_path, retrainer):
     # Model, Loss, Optimizer
     input_size = inp.shape[2] - 1  # Exclude done state 
     output_size = out.shape[2]
-    model = AutoregressiveLSTM(input_size, output_size, hidden_size, num_layers).to(device)
+    model = AutoregressiveLSTM(input_size, output_size, hidden_size, num_layers, dropout = 0.1).to(device)
     # update the model params with the best model if retraining
     if retrainer:
         try:
@@ -139,28 +145,39 @@ def main(train_path, save_path, retrainer):
         
     criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=5)
     # Training Loop
     best_loss = np.inf
+    prev_ar_steps = 1
     for epoch in range(epochs):
         model.train()
-        epoch_loss, loss_nar, loss_ar = train_step(model, data_loader, criterion, optimizer, device, epoch, epochs, max_ar_steps, train=True)
+        # finding the hyperparameters
+        lambda_ar = min(1.0, epoch / epochs)
+        autoregressive_steps = max(1, 1+int(lambda_ar * max_ar_steps)) # Linearly increase AR steps
+        if autoregressive_steps > prev_ar_steps:
+            optimizer.param_groups[0]['lr'] = learning_rate
+            scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=5)
+            prev_ar_steps = autoregressive_steps
+
+
+        epoch_loss = train_step(model, data_loader, criterion, optimizer,scheduler, device, lambda_ar, autoregressive_steps, train=True)
         # do the test
         model.eval()
-        epoch_loss_test, loss_nar_test, loss_ar_test = train_step(model, data_loader_test, criterion, optimizer, device,  epoch, epochs, max_ar_steps, train=False) 
-        if epoch_loss_test < best_loss:
+        with torch.no_grad():
+            epoch_loss_test = train_step(model, data_loader_test, criterion, optimizer,scheduler, device,  lambda_ar, autoregressive_steps, train=False) 
+        if autoregressive_steps ==max_ar_steps and epoch_loss_test < best_loss:
             best_loss = epoch_loss_test
             best_model = model
             best_epoch = epoch + 1
 
+
+        wandb.log({"epoch": epoch + 1, "ar_step": autoregressive_steps})
         if epoch % 5 == 0:
             print(f"Epoch {epoch + 1}: Train Loss: {epoch_loss / len(data_loader)}, Test Loss: {epoch_loss_test / len(data_loader_test)}")
 
-        # Log metrics to wandb
-        wandb.log({"epoch_loss": epoch_loss, "val_loss": epoch_loss_test,
-                  "loss_nar": loss_nar, "loss_ar" : loss_ar,
-                    "loss_nar_test":loss_nar_test, "loss_ar_test":loss_ar_test,"epoch": epoch + 1})
+        
     print(f"Best model found at epoch {best_epoch}")
-    torch.save(best_model.state_dict(), save_path)
+    torch.save(best_model.state_dict(), save_path[:-4] + str(max_ar_steps)+ ".pth")
 
     print("Training complete!")
     wandb.finish()
@@ -168,5 +185,5 @@ def main(train_path, save_path, retrainer):
 if __name__ == "__main__":
     retrainer = True
     train_path = './data/VesselSimulator/data_train.pkl'
-    save_path = './data/VesselSimulator/lstm_model_ar.pth'
+    save_path = './data/VesselSimulator/lstm_model_ar5.pth'
     main(train_path, save_path, retrainer)

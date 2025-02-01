@@ -6,6 +6,10 @@ coteaching
 2. [Usage](#usage)
 3. [Disclaimer](#disclaimer)
 
+
+https://github.com/user-attachments/assets/49c39fa0-2532-49ee-9758-75d23737b26b
+
+
 ## Setup
 
  Clone the repository and build a conda environment from requirement.txt:
